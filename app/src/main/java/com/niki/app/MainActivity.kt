@@ -1,15 +1,10 @@
 package com.niki.app
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.media.MediaRecorder
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,144 +13,264 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import java.io.File
+import androidx.compose.ui.unit.sp
+
+private val Navy = Color(0xFF10172A)
+private val Purple = Color(0xFF7755DD)
+private val LightPurple = Color(0xFFE9E2FF)
+private val Background = Color(0xFFF6F5FA)
+
+data class Studio(
+    val name: String,
+    val icon: String,
+    val description: String
+)
+
+private val studios = listOf(
+    Studio("Voice Studio", "🎙️", "Record and transform your voice"),
+    Studio("Subtitle Studio", "✍️", "Create and animate your subtitles"),
+    Studio("LipSync Studio", "👄", "Bring photographs to life"),
+    Studio("BodyMotion Studio", "🕺", "Create gestures and body movements"),
+    Studio("Video Studio", "🎬", "Combine your creations into videos")
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { NikiHome() }
+
+        setContent {
+            MaterialTheme {
+                NikiApp()
+            }
+        }
     }
 }
 
 @Composable
-private fun NikiHome() {
-    val context = LocalContext.current
-    var mode by remember { mutableStateOf("Record My Voice") }
-    var words by remember { mutableStateOf("") }
-    var recording by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Your next story starts here.") }
-    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
-    var audioPath by remember { mutableStateOf<String?>(null) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            try {
-                val output = File(context.cacheDir, "niki_recording.m4a")
-                val media = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
-                media.setAudioSource(MediaRecorder.AudioSource.MIC)
-                media.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                media.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                media.setOutputFile(output.absolutePath)
-                media.prepare()
-                media.start()
-                recorder = media
-                audioPath = output.absolutePath
-                recording = true
-                status = "Recording your voice…"
-            } catch (e: Exception) {
-                status = "Could not start recording. Please try again."
-            }
-        } else status = "Microphone permission is needed to record."
+fun NikiApp() {
+    var selectedStudio by remember {
+        mutableStateOf<Studio?>(null)
     }
 
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Color(0xFF5B3FD1),
-            secondary = Color(0xFFEC6B8B),
-            background = Color(0xFFF7F5FC),
-            surface = Color.White
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Background
+    ) {
+        if (selectedStudio == null) {
+            HomeScreen(
+                onStudioClick = { selectedStudio = it }
+            )
+        } else {
+            StudioScreen(
+                studio = selectedStudio!!,
+                onBack = { selectedStudio = null }
+            )
+        }
+    }
+}
+
+@Composable
+fun HomeScreen(
+    onStudioClick: (Studio) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Navy, Purple)
+                    )
+                )
+                .padding(26.dp)
+        ) {
+            Text(
+                text = "NIKI",
+                fontSize = 42.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White
+            )
+
+            Text(
+                text = "Your Voice. Your Story. Your Victory.",
+                fontSize = 15.sp,
+                color = Color.White
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            Text(
+                text = "Create something amazing.",
+                fontSize = 23.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+
+            Text(
+                text = "Your creativity starts here.",
+                fontSize = 14.sp,
+                color = LightPurple
+            )
+        }
+
+        Column(
+            modifier = Modifier.padding(20.dp)
+        ) {
+            Text(
+                text = "MY STUDIOS",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Purple
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            studios.forEach { studio ->
+                StudioCard(
+                    studio = studio,
+                    onClick = { onStudioClick(studio) }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            Spacer(modifier = Modifier.height(15.dp))
+
+            Text(
+                text = "Made with NIKI ❤️",
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                color = Color.Gray,
+                fontSize = 13.sp
+            )
+        }
+    }
+}
+
+@Composable
+fun StudioCard(
+    studio: Studio,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 3.dp
         )
     ) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = studio.icon,
+                fontSize = 32.sp
+            )
+
+            Spacer(modifier = Modifier.width(16.dp))
+
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier.weight(1f)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("NIKI", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary)
-                    Text("Your Voice. Your Story. Your Victory.",
-                        style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray)
-                }
-
-                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Create a story", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(selected = mode == "Record My Voice", onClick = { mode = "Record My Voice" },
-                                label = { Text("Record My Voice") })
-                            FilterChip(selected = mode == "Type My Words", onClick = { mode = "Type My Words" },
-                                label = { Text("Type My Words") })
-                        }
-                        if (mode == "Record My Voice") {
-                            Text("Record narration for your video. You can stop and replay it later as the project grows.")
-                            Button(
-                                onClick = {
-                                    if (!recording) {
-                                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                                        if (granted) {
-                                            try {
-                                                val output = File(context.cacheDir, "niki_recording.m4a")
-                                                val media = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
-                                                media.setAudioSource(MediaRecorder.AudioSource.MIC)
-                                                media.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                                                media.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                                                media.setOutputFile(output.absolutePath)
-                                                media.prepare(); media.start()
-                                                recorder = media; audioPath = output.absolutePath
-                                                recording = true; status = "Recording your voice…"
-                                            } catch (_: Exception) { status = "Recording could not start." }
-                                        } else permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    } else {
-                                        try { recorder?.stop(); recorder?.release() } catch (_: Exception) {}
-                                        recorder = null; recording = false
-                                        status = "Recording saved in this session."
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text(if (recording) "Stop recording" else "Start recording") }
-                            Text(if (audioPath != null) "A recording has been created in the app's temporary storage." else "Your recording will appear here.")
-                        } else {
-                            Text("Write or paste the words you want to display as subtitles.")
-                            OutlinedTextField(
-                                value = words, onValueChange = { words = it },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 130.dp),
-                                label = { Text("Your story or subtitle text") },
-                                placeholder = { Text("Start typing…") }
-                            )
-                            Text("This starter version lets you draft text. Automatic speech transcription and timed subtitle generation are planned features.")
-                        }
-                    }
-                }
-
-                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFEDE8FF))) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Subtitle preview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Box(
-                            Modifier.fillMaxWidth().height(150.dp).background(Color(0xFF252235), RoundedCornerShape(14.dp)).padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                words.ifBlank { "Your subtitles will appear here." },
-                                color = Color.White, style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-                Text(status, style = MaterialTheme.typography.bodySmall, color = Color.DarkGray)
                 Text(
-                    "Starter build: recording and text preview are included. Automatic transcription, subtitle timing, media import, effects, music, video rendering and MP4 export still need to be implemented.",
-                    style = MaterialTheme.typography.bodySmall, color = Color.Gray
+                    text = studio.name,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Navy
+                )
+
+                Text(
+                    text = studio.description,
+                    fontSize = 12.sp,
+                    color = Color.Gray
                 )
             }
+
+            Text(
+                text = "›",
+                fontSize = 28.sp,
+                color = Purple
+            )
         }
+    }
+}
+
+@Composable
+fun StudioScreen(
+    studio: Studio,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack) {
+                Text("← Back", color = Purple)
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Text(
+                text = studio.name,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
+        }
+
+        Spacer(modifier = Modifier.height(65.dp))
+
+        Text(
+            text = studio.icon,
+            fontSize = 65.sp
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Text(
+            text = studio.name,
+            fontSize = 25.sp,
+            fontWeight = FontWeight.Bold,
+            color = Navy
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text(
+            text = studio.description,
+            color = Color.Gray,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(30.dp))
+
+        Text(
+            text = "Your creative workspace is being prepared.",
+            textAlign = TextAlign.Center,
+            fontSize = 14.sp,
+            color = Purple
+        )
     }
 }
