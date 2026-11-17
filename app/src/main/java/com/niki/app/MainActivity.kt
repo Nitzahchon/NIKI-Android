@@ -226,65 +226,41 @@ fun StudioScreen(
     studio: Studio,
     onBack: () -> Unit
 ) {
-    if (studio.name == "Voice Studio") {
-        VoiceStudioScreen(onBack)
-    } else {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+    when (studio.name) {
+        "Voice Studio" -> VoiceStudioScreen(onBack)
+
+        "Subtitle Studio" -> SubtitleStudioScreen(onBack)
+
+        else -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 TextButton(onClick = onBack) {
-                    Text("← Back", color = Purple)
+                    Text("← Back to NIKI", color = Purple)
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.height(50.dp))
+
+                Text(studio.icon, fontSize = 65.sp)
 
                 Text(
-                    text = studio.name,
-                    fontSize = 20.sp,
+                    studio.name,
+                    fontSize = 25.sp,
                     fontWeight = FontWeight.Bold,
                     color = Navy
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    "Your creative workspace is being prepared.",
+                    color = Purple,
+                    textAlign = TextAlign.Center
+                )
             }
-
-            Spacer(modifier = Modifier.height(65.dp))
-
-            Text(
-                text = studio.icon,
-                fontSize = 65.sp
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = studio.name,
-                fontSize = 25.sp,
-                fontWeight = FontWeight.Bold,
-                color = Navy
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = studio.description,
-                color = Color.Gray,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(30.dp))
-
-            Text(
-                text = "Your creative workspace is being prepared.",
-                textAlign = TextAlign.Center,
-                fontSize = 14.sp,
-                color = Purple
-            )
         }
     }
 }
@@ -600,6 +576,165 @@ fun VoiceStudioScreen(onBack: () -> Unit) {
             color = Color.Gray,
             fontSize = 12.sp,
             textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+fun SubtitleStudioScreen(onBack: () -> Unit) {
+
+    var subtitle by remember { mutableStateOf("") }
+    var position by remember { mutableStateOf("Bottom") }
+    var alignment by remember { mutableStateOf("Centre") }
+    var effect by remember { mutableStateOf("Normal") }
+    var textSize by remember { mutableFloatStateOf(24f) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+
+        TextButton(onClick = onBack) {
+            Text("← Back to NIKI", color = Purple)
+        }
+
+        Text(
+            "✍️ Subtitle Studio",
+            fontSize = 27.sp,
+            fontWeight = FontWeight.Bold,
+            color = Navy
+        )
+
+        Text(
+            "Create and customize your subtitles.",
+            color = Color.Gray
+        )
+
+        OutlinedTextField(
+            value = subtitle,
+            onValueChange = { subtitle = it },
+            label = { Text("Enter your subtitle") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3
+        )
+
+        Text(
+            "SUBTITLE PREVIEW",
+            fontWeight = FontWeight.Bold,
+            color = Purple
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(210.dp)
+                .background(
+                    Color.DarkGray,
+                    RoundedCornerShape(16.dp)
+                )
+                .padding(12.dp),
+            contentAlignment = when (position) {
+                "Top" -> Alignment.TopCenter
+                "Middle" -> Alignment.Center
+                else -> Alignment.BottomCenter
+            }
+        ) {
+            Text(
+                text = subtitle.ifBlank {
+                    "Your subtitles appear here"
+                },
+                color = Color.White,
+                fontSize = textSize.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = when (alignment) {
+                    "Left" -> TextAlign.Left
+                    "Right" -> TextAlign.Right
+                    else -> TextAlign.Center
+                }
+            )
+        }
+
+        Text(
+            "SUBTITLE POSITION",
+            fontWeight = FontWeight.Bold,
+            color = Navy
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Top", "Middle", "Bottom").forEach {
+                FilterChip(
+                    selected = position == it,
+                    onClick = { position = it },
+                    label = { Text(it) }
+                )
+            }
+        }
+
+        Text(
+            "TEXT ALIGNMENT",
+            fontWeight = FontWeight.Bold,
+            color = Navy
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Left", "Centre", "Right").forEach {
+                FilterChip(
+                    selected = alignment == it,
+                    onClick = { alignment = it },
+                    label = { Text(it) }
+                )
+            }
+        }
+
+        Text(
+            "SUBTITLE EFFECT",
+            fontWeight = FontWeight.Bold,
+            color = Navy
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("Normal", "Scrolling").forEach {
+                FilterChip(
+                    selected = effect == it,
+                    onClick = { effect = it },
+                    label = { Text(it) }
+                )
+            }
+        }
+
+        Text(
+            "TEXT SIZE: ${textSize.toInt()} SP",
+            fontWeight = FontWeight.Bold,
+            color = Navy
+        )
+
+        Slider(
+            value = textSize,
+            onValueChange = { textSize = it },
+            valueRange = 14f..40f
+        )
+
+        Button(
+            onClick = { subtitle = "" },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Clear Subtitle")
+        }
+
+        Text(
+            "Your subtitle settings are ready for video integration.",
+            color = Purple,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
