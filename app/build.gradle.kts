@@ -7,10 +7,12 @@ plugins {
 android {
     namespace = "com.niki.app"
     compileSdk = 35
-compileOptions {
+
+    compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     defaultConfig {
         applicationId = "com.niki.app"
         minSdk = 23
@@ -26,10 +28,17 @@ compileOptions {
 
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.10.00"))
+
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+
+    // NIKI Video and Audio Processing
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-transformer:1.5.1")
+    implementation("androidx.media3:media3-effect:1.5.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
