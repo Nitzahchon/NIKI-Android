@@ -1,5 +1,9 @@
 package com.niki.app
-
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.compose.material3.Switch
+import java.util.Locale
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
@@ -8,6 +12,7 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import androidx.compose.foundation.basicMarquee
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -505,11 +510,71 @@ fun VoiceStudioScreen(onBack: () -> Unit) {
 
 @Composable
 fun SubtitleStudioScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
     var subtitle by remember { mutableStateOf("") }
     var position by remember { mutableStateOf("Bottom") }
     var alignment by remember { mutableStateOf("Centre") }
     var effect by remember { mutableStateOf("Normal") }
     var textSize by remember { mutableFloatStateOf(24f) }
+    var textColour by remember { mutableStateOf(Color.White) }
+    var backgroundColour by remember {
+mutableStateOf(Color.DarkGray)
+}
+var useImage by remember { mutableStateOf(false) }
+var showTextBackground by remember {
+        mutableStateOf(true)
+}
+mutableStateOf(true)
+}
+var status by remember {
+mutableStateOf("Ready to create subtitles.")
+}
+
+var selectedImage by remember {
+mutableStateOf<ImageBitmap?>(null)
+}
+
+val imagePicker =
+rememberLauncherForActivityResult(
+ActivityResultContracts.OpenDocument()
+) { uri ->
+if (uri != null) {
+try {
+val bitmap = context.contentResolver
+.openInputStream(uri)
+?.use { BitmapFactory.decodeStream(it) }
+
+            if (bitmap != null) {
+                selectedImage = bitmap.asImageBitmap()
+                useImage = true
+                status = "Background image loaded."
+            } else {
+                status = "Unable to load image."
+            }
+        } catch (e: Exception) {
+            status = "Image loading failed."
+        }
+    }
+}
+
+val speechLauncher =
+rememberLauncherForActivityResult(
+ActivityResultContracts.StartActivityForResult()
+) { result ->
+if (result.resultCode == Activity.RESULT_OK) {
+val words = result.data
+?.getStringArrayListExtra(
+RecognizerIntent.EXTRA_RESULTS
+)
+
+        if (!words.isNullOrEmpty()) {
+            subtitle = words[0]
+            status = "Speech converted to text."
+        }
+    } else {
+        status = "Speech recognition cancelled."
+    }
+}
 
     Column(
         modifier = Modifier
@@ -530,7 +595,89 @@ fun SubtitleStudioScreen(onBack: () -> Unit) {
         )
 
         Text("Create and customize your subtitles.", color = Color.Gray)
+Button(
+onClick = {
+imagePicker.launch(arrayOf("image/*"))
+},
+modifier = Modifier.fillMaxWidth()
+) {
+Text("🖼️ Upload Background Image")
+}
 
+Row(
+modifier = Modifier.fillMaxWidth(),
+horizontalArrangement = Arrangement.spacedBy(8.dp)
+) {
+FilterChip(
+selected = useImage,
+onClick = {
+if (selectedImage != null) useImage = true
+},
+label = { Text("Image Background") }
+)
+
+FilterChip(
+    selected = !useImage,
+    onClick = { useImage = false },
+    label = { Text("Colour Background") }
+)
+
+}
+
+Text("BACKGROUND COLOUR", fontWeight = FontWeight.Bold)
+
+Row(
+horizontalArrangement = Arrangement.spacedBy(10.dp)
+) {
+listOf(
+Color.Black,
+Color.DarkGray,
+Color.Blue,
+Color(0xFF7755DD),
+Color.Red,
+Color.Green,
+Color.White
+).forEach { colour ->
+Box(
+modifier = Modifier
+.size(34.dp)
+.background(colour, RoundedCornerShape(8.dp))
+.clickable {
+backgroundColour = colour
+useImage = false
+}
+)
+}
+}
+
+Button(
+onClick = {
+try {
+val intent = Intent(
+RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+).apply {
+putExtra(
+RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+)
+putExtra(
+RecognizerIntent.EXTRA_LANGUAGE,
+Locale.getDefault()
+)
+putExtra(
+RecognizerIntent.EXTRA_PROMPT,
+"Speak your subtitle"
+)
+}
+speechLauncher.launch(intent)
+} catch (e: Exception) {
+status = "Speech recognition is unavailable."
+}
+},
+modifier = Modifier.fillMaxWidth()
+) {
+Text("🎙️ Speak and Create Subtitles")
+}
         OutlinedTextField(
             value = subtitle,
             onValueChange = { subtitle = it },
@@ -541,30 +688,53 @@ fun SubtitleStudioScreen(onBack: () -> Unit) {
 
         Text("SUBTITLE PREVIEW", fontWeight = FontWeight.Bold, color = Purple)
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(210.dp)
-                .background(Color.DarkGray, RoundedCornerShape(16.dp))
-                .padding(12.dp),
-            contentAlignment = when (position) {
-                "Top" -> Alignment.TopCenter
-                "Middle" -> Alignment.Center
-                else -> Alignment.BottomCenter
-            }
-        ) {
-            Text(
-                subtitle.ifBlank { "Your subtitles appear here" },
-                color = Color.White,
-                fontSize = textSize.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = when (alignment) {
-                    "Left" -> TextAlign.Left
-                    "Right" -> TextAlign.Right
-                    else -> TextAlign.Center
-                }
+Box(
+    modifier = Modifier
+        .fillMaxWidth()
+        .height(230.dp)
+        .background(
+            if (useImage) Color.Black else backgroundColour,
+            RoundedCornerShape(16.dp)
+        ),
+    contentAlignment = when (position) {
+        "Top" -> Alignment.TopCenter
+        "Middle" -> Alignment.Center
+        else -> Alignment.BottomCenter
+    }
+) {
+    if (useImage && selectedImage != null) {
+        Image(
+            bitmap = selectedImage!!,
+            contentDescription = "Subtitle background image",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+    }
+
+    Text(
+        text = subtitle.ifBlank {
+            "Your subtitles appear here"
+        },
+        color = textColour,
+        fontSize = textSize.sp,
+        fontWeight = FontWeight.Bold,
+        textAlign = when (alignment) {
+            "Left" -> TextAlign.Left
+            "Right" -> TextAlign.Right
+            else -> TextAlign.Center
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp)
+            .background(
+                if (showTextBackground)
+                    Color.Black.copy(alpha = 0.45f)
+                else Color.Transparent,
+                RoundedCornerShape(8.dp)
             )
-        }
+            .padding(8.dp)
+    )
+}
 
         Text("SUBTITLE POSITION", fontWeight = FontWeight.Bold, color = Navy)
 
@@ -589,7 +759,46 @@ fun SubtitleStudioScreen(onBack: () -> Unit) {
                 )
             }
         }
+Text("TEXT COLOUR", fontWeight = FontWeight.Bold, color = Navy)
 
+Row(
+    horizontalArrangement = Arrangement.spacedBy(10.dp)
+) {
+    listOf(
+        Color.White,
+        Color.Yellow,
+        Color.Red,
+        Color.Green,
+        Color.Cyan,
+        Color.Black
+    ).forEach { colour ->
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .background(colour, RoundedCornerShape(8.dp))
+                .clickable {
+                    textColour = colour
+                }
+        )
+    }
+}
+
+Row(
+    modifier = Modifier.fillMaxWidth(),
+    verticalAlignment = Alignment.CenterVertically
+) {
+    Text(
+        "Subtitle text background",
+        modifier = Modifier.weight(1f)
+    )
+
+    Switch(
+        checked = showTextBackground,
+        onCheckedChange = {
+            showTextBackground = it
+        }
+    )
+}
         Text("SUBTITLE EFFECT", fontWeight = FontWeight.Bold, color = Navy)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
