@@ -518,13 +518,15 @@ fun SubtitleStudioScreen(onBack: () -> Unit) {
     var textSize by remember { mutableFloatStateOf(24f) }
     var textColour by remember { mutableStateOf(Color.White) }
     var backgroundColour by remember {
-mutableStateOf(Color.DarkGray)
+    mutableStateOf(Color.DarkGray)
 }
-var useImage by remember { mutableStateOf(false) }
+
+var useImage by remember {
+    mutableStateOf(false)
+}
+
 var showTextBackground by remember {
-        mutableStateOf(true)
-}
-mutableStateOf(true)
+    mutableStateOf(true)
 }
 var status by remember {
 mutableStateOf("Ready to create subtitles.")
