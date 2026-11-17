@@ -7,8 +7,7 @@ plugins {
 android {
     namespace = "com.niki.app"
     compileSdk = 35
-
-    compileOptions {
+compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
