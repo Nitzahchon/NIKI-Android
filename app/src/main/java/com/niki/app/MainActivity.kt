@@ -1,9 +1,8 @@
 package com.niki.app
+
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.speech.RecognizerIntent
-import android.widget.VideoView
-import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
@@ -11,60 +10,46 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.speech.RecognizerIntent
+import android.widget.VideoView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.material3.Switch
-import androidx.compose.ui.viewinterop.AndroidView
-import java.util.Locale
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import java.io.File
+import java.util.Locale
 
-private val Navy = Color(0xFF10172A)
-private val Purple = Color(0xFF7755DD)
-private val LightPurple = Color(0xFFE9E2FF)
-private val Background = Color(0xFFF6F5FA)
+private val Navy = Color(0xFF101A35)
+private val Purple = Color(0xFF7952D6)
+private val LightPurple = Color(0xFFB9A2FF)
+private val Background = Color(0xFF080D1B)
 
-data class Studio(
+data class EditorMedia(
+    val uri: Uri,
     val name: String,
-    val icon: String,
-    val description: String
+    val type: String
 )
 
-private val studios = listOf(
-    Studio("Voice Studio", "🎙️", "Record and transform your voice"),
-    Studio("Subtitle Studio", "✍️", "Create and animate your subtitles"),
-    Studio("LipSync Studio", "👄", "Bring photographs to life"),
-    Studio("BodyMotion Studio", "🕺", "Create gestures and body movements"),
-    Studio("Video Studio", "🎬", "Combine your creations into videos")
+data class SubtitleClip(
+    val text: String,
+    val start: Long = 0L,
+    val duration: Long = 3000L
 )
 
 class MainActivity : ComponentActivity() {
@@ -81,105 +66,88 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun NikiApp() {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Background
-    ) {
-        EditorScreen()
-    }
-}
-data class EditorMedia(
-    val uri: Uri,
-    val name: String,
-    val type: String
-)
-
+    EditorScreen()
+} 
 @Composable
 fun EditorScreen() {
     val context = LocalContext.current
 
-    var mediaList by remember {
-        mutableStateOf(listOf<EditorMedia>())
-    }
+    var mediaList by remember { mutableStateOf(listOf<EditorMedia>()) }
+    var selectedMedia by remember { mutableStateOf<EditorMedia?>(null) }
+    var selectedTool by remember { mutableStateOf("Media") }
+    var subtitleText by remember { mutableStateOf("") }
+    var isPlaying by remember { mutableStateOf(false) }
+    var audioUri by remember { mutableStateOf<Uri?>(null) }
 
-    var selectedMedia by remember {
-        mutableStateOf<EditorMedia?>(null)
-    }
+    val mediaPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        val newItems = uris.map { uri ->
+            val mime = context.contentResolver.getType(uri) ?: ""
 
-    var selectedTool by remember {
-        mutableStateOf("Media")
-    }
-
-    var isPlaying by remember {
-        mutableStateOf(false)
-    }
-
-    val mediaPicker =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenMultipleDocuments()
-        ) { uris ->
-
-            val newMedia = uris.map { uri ->
-
-                val mime = context.contentResolver
-                    .getType(uri) ?: ""
-
-                val type = when {
-                    mime.startsWith("image/") -> "Image"
-                    mime.startsWith("video/") -> "Video"
-                    mime.startsWith("audio/") -> "Audio"
-                    else -> "Media"
-                }
-
-                EditorMedia(
-                    uri = uri,
-                    name = uri.lastPathSegment ?: type,
-                    type = type
-                )
+            val type = when {
+                mime.startsWith("image/") -> "Image"
+                mime.startsWith("video/") -> "Video"
+                mime.startsWith("audio/") -> "Audio"
+                else -> "Media"
             }
 
-            mediaList = mediaList + newMedia
-
-            if (selectedMedia == null && newMedia.isNotEmpty()) {
-                selectedMedia = newMedia.first()
-            }
+            EditorMedia(
+                uri = uri,
+                name = "Project ${mediaList.size + 1}",
+                type = type
+            )
         }
+
+        mediaList = mediaList + newItems
+
+        if (selectedMedia == null && newItems.isNotEmpty()) {
+            selectedMedia = newItems.first()
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF111111))
+            .background(Background)
+            .padding(12.dp)
     ) {
 
-        // TOP BAR
+        // HEADER
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Navy)
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                "NIKI",
-                fontSize = 25.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Color.White,
-                modifier = Modifier.weight(1f)
-            )
+            Column {
+                Text(
+                    "NIKI",
+                    color = Color.White,
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold
+                )
 
-            Text(
-                "EXPORT",
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .background(Purple, RoundedCornerShape(8.dp))
-                    .clickable {
-                        // Export will be implemented later.
-                    }
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
-            )
+                Text(
+                    "Your Voice. Your Story. Your Victory.",
+                    color = LightPurple,
+                    fontSize = 10.sp
+                )
+            }
+
+            Button(
+                onClick = {
+                    // Export functionality will be connected later.
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Purple
+                )
+            ) {
+                Text("Export")
+            }
         }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // VIDEO PREVIEW
 
@@ -187,44 +155,209 @@ fun EditorScreen() {
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(12.dp)
-                .background(Color.Black, RoundedCornerShape(12.dp)),
+                .background(Navy, RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
-
-            val current = selectedMedia
-
-            if (current == null) {
-
+            if (selectedMedia == null) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("🎬", fontSize = 55.sp)
-
                     Text(
-                        "Your video preview",
-                        color = Color.White,
-                        fontSize = 18.sp,
+                        "NIKI STUDIO",
+                        color = LightPurple,
+                        fontSize = 23.sp,
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
-                        "Import photos or videos to begin",
-                        color = Color.LightGray,
-                        fontSize = 13.sp
+                        "Import photos, videos or audio",
+                        color = Color.White
                     )
                 }
+            } else {
+                MediaPreview(
+                    media = selectedMedia!!,
+                    subtitle = subtitleText
+                )
+            }
+        }
 
-            } else if (current.type == "Image") {
+        Spacer(modifier = Modifier.height(10.dp))
 
-                val bitmap = remember(current.uri) {
+        // PLAYBACK CONTROLS
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    isPlaying = !isPlaying
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Purple
+                )
+            ) {
+                Text(if (isPlaying) "Pause" else "Play")
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Text(
+                "Preview",
+                color = Color.White
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // TIMELINE
+
+        Text(
+            "PROJECT TIMELINE",
+            color = LightPurple,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(65.dp)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (mediaList.isEmpty()) {
+                Text(
+                    "Your imported clips will appear here",
+                    color = Color.Gray
+                )
+            }
+
+            mediaList.forEach { item ->
+                Card(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .width(105.dp)
+                        .fillMaxHeight()
+                        .clickable {
+                            selectedMedia = item
+                        },
+                    colors = CardDefaults.cardColors(
+                        containerColor =
+                            if (selectedMedia == item)
+                                Purple
+                            else Navy
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            item.type,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Text(
+                            item.name,
+                            color = Color.White,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // EDITING TOOLS
+
+        Text(
+            "EDITING TOOLS",
+            color = LightPurple,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            listOf(
+                "Media",
+                "Audio",
+                "Subtitles",
+                "Lip Sync",
+                "Body Motion",
+                "Effects"
+            ).forEach { tool ->
+
+                FilterChip(
+                    selected = selectedTool == tool,
+                    onClick = {
+                        selectedTool = tool
+                    },
+                    label = {
+                        Text(tool)
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // SELECTED TOOL WORKSPACE
+
+        EditorToolPanel(
+            selectedTool = selectedTool,
+            subtitleText = subtitleText,
+            onSubtitleChange = {
+                subtitleText = it
+            },
+            onImportMedia = {
+                mediaPicker.launch(
+                    arrayOf("image/*", "video/*", "audio/*")
+                )
+            },
+            onAudioSelected = {
+                audioUri = it
+            }
+        )
+    }
+}
+@Composable
+fun MediaPreview(
+    media: EditorMedia,
+    subtitle: String
+) {
+    val context = LocalContext.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+
+        when (media.type) {
+
+            "Image" -> {
+                val bitmap = remember(media.uri) {
                     try {
                         context.contentResolver
-                            .openInputStream(current.uri)
-                            ?.use {
-                                BitmapFactory.decodeStream(it)
-                                    ?.asImageBitmap()
-                            }
+                            .openInputStream(media.uri)
+                            ?.use { BitmapFactory.decodeStream(it) }
                     } catch (e: Exception) {
                         null
                     }
@@ -232,10 +365,9 @@ fun EditorScreen() {
 
                 if (bitmap != null) {
                     Image(
-                        bitmap = bitmap,
-                        contentDescription = "Video preview",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Selected image",
+                        modifier = Modifier.fillMaxSize()
                     )
                 } else {
                     Text(
@@ -243,1398 +375,436 @@ fun EditorScreen() {
                         color = Color.White
                     )
                 }
+            }
 
-            } else if (current.type == "Video") {
-
+            "Video" -> {
                 AndroidView(
-                    factory = { viewContext ->
-                        VideoView(viewContext).apply {
-                            setVideoURI(current.uri)
+                    factory = { ctx ->
+                        VideoView(ctx).apply {
+                            setVideoURI(media.uri)
 
-                            setOnPreparedListener {
-                                it.isLooping = true
+                            setOnPreparedListener { player ->
+                                player.isLooping = true
                                 start()
-                                isPlaying = true
                             }
                         }
                     },
-                    update = { videoView ->
-    if (videoView.tag != current.uri.toString()) {
-        videoView.tag = current.uri.toString()
-        videoView.setVideoURI(current.uri)
-
-        videoView.setOnPreparedListener { mediaPlayer ->
-    mediaPlayer.isLooping = true
-    videoView.start()
-    isPlaying = true
-        }
-    }
-},
-modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize()
                 )
+            }
 
-            } else {
+            "Audio" -> {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "♫",
+                        color = LightPurple,
+                        fontSize = 55.sp
+                    )
 
+                    Text(
+                        "AUDIO ADDED",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        media.name,
+                        color = LightPurple,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            else -> {
                 Text(
-                    "🎵 Audio added to your project",
+                    "Select media to preview",
                     color = Color.White
                 )
             }
         }
 
-        // PLAYBACK CONTROLS
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(
-                onClick = {
-                    isPlaying = !isPlaying
-                }
-            ) {
-                Text(
-                    if (isPlaying) "Ⅱ Pause" else "▶ Play",
-                    color = Color.White,
-                    fontSize = 18.sp
-                )
-            }
-        }
-
-        // TIMELINE
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF202020))
-                .padding(12.dp)
-        ) {
-
+        if (subtitle.isNotBlank()) {
             Text(
-                "TIMELINE",
+                text = subtitle,
                 color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.horizontalScroll(
-                    rememberScrollState()
-                )
-            ) {
-
-                if (mediaList.isEmpty()) {
-                    Text(
-                        "Your imported clips will appear here.",
-                        color = Color.LightGray,
-                        fontSize = 12.sp
-                    )
-                }
-
-                mediaList.forEach { item ->
-
-                    Column(
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .background(
-                                if (selectedMedia == item)
-                                    Purple
-                                else Color.DarkGray,
-                                RoundedCornerShape(8.dp)
-                            )
-                            .clickable {
-                                selectedMedia = item
-                            }
-                            .padding(12.dp)
-                    ) {
-
-                        Text(
-                            when (item.type) {
-                                "Image" -> "🖼️"
-                                "Video" -> "🎬"
-                                "Audio" -> "🎵"
-                                else -> "📁"
-                            },
-                            fontSize = 22.sp
-                        )
-
-                        Text(
-                            item.type,
-                            color = Color.White,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-        }
-
-        // EDITING TOOLS
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Navy)
-                .padding(vertical = 10.dp)
-        ) {
-
-            Row(
-                modifier = Modifier.horizontalScroll(
-                    rememberScrollState()
-                ),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-
-                listOf(
-                    "Media",
-                    "Audio",
-                    "Text",
-                    "LipSync",
-                    "Motion",
-                    "Effects"
-                ).forEach { tool ->
-
-                    FilterChip(
-                        selected = selectedTool == tool,
-                        onClick = {
-                            selectedTool = tool
-                        },
-                        label = { Text(tool) }
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            when (selectedTool) {
-
-                "Media" -> {
-                    Button(
-                        onClick = {
-                            mediaPicker.launch(
-                                arrayOf(
-                                    "image/*",
-                                    "video/*",
-                                    "audio/*"
-                                )
-                            )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                    ) {
-                        Text("＋ Import Photos, Videos and Audio")
-                    }
-                }
-
-                "Audio" -> {
-                    Text(
-                        "🎙️ Record voice  |  🎵 Import audio",
-                        color = Color.White,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-
-                "Text" -> {
-                    Text(
-                        "✍️ Add and customize subtitles",
-                        color = Color.White,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-
-                "LipSync" -> {
-                    Text(
-                        "👄 Animate a photograph to speak",
-                        color = Color.White,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-
-                "Motion" -> {
-                    Text(
-                        "🕺 Create body movements and gestures",
-                        color = Color.White,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-
-                "Effects" -> {
-                    Text(
-                        "✨ Visual and audio effects",
-                        color = Color.White,
-                        modifier = Modifier.padding(14.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-    
-
-@Composable
-fun HomeScreen(onStudioClick: (Studio) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(listOf(Navy, Purple))
-                )
-                .padding(26.dp)
-        ) {
-            Text(
-                "NIKI",
-                fontSize = 42.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = Color.White
-            )
-
-            Text(
-                "Your Voice. Your Story. Your Victory.",
-                color = Color.White
-            )
-
-            Spacer(Modifier.height(28.dp))
-
-            Text(
-                "Create something amazing.",
-                fontSize = 23.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-
-            Text(
-                "Your creativity starts here.",
-                color = LightPurple
-            )
-        }
-
-        Column(Modifier.padding(20.dp)) {
-            Text(
-                "MY STUDIOS",
-                fontWeight = FontWeight.Bold,
-                color = Purple
-            )
-
-            Spacer(Modifier.height(14.dp))
-
-            studios.forEach { studio ->
-                StudioCard(studio) {
-                    onStudioClick(studio)
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            Text(
-                "Made with NIKI ❤️",
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                color = Color.Gray
-            )
-        }
-    }
-}
-
-@Composable
-fun StudioCard(studio: Studio, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
-        elevation = CardDefaults.cardElevation(3.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(studio.icon, fontSize = 32.sp)
-
-            Spacer(Modifier.width(16.dp))
-
-            Column(Modifier.weight(1f)) {
-                Text(
-                    studio.name,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy
-                )
-
-                Text(
-                    studio.description,
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
-            }
-
-            Text("›", fontSize = 28.sp, color = Purple)
-        }
-    }
-}
-
-@Composable
-fun StudioScreen(studio: Studio, onBack: () -> Unit) {
-    when (studio.name) {
-        "Voice Studio" -> VoiceStudioScreen(onBack)
-        "Subtitle Studio" -> SubtitleStudioScreen(onBack)
-        "LipSync Studio" -> LipSyncStudioScreen(onBack)
-
-        else -> {
-            Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                TextButton(onClick = onBack) {
-                    Text("← Back to NIKI", color = Purple)
-                }
-
-                Spacer(Modifier.height(50.dp))
-
-                Text(studio.icon, fontSize = 65.sp)
-
-                Text(
-                    studio.name,
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                Text(
-                    "Your creative workspace is being prepared.",
-                    color = Purple,
-                    textAlign = TextAlign.Center
-                )
-            }
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+                    .background(
+                        Color.Black.copy(alpha = 0.65f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(10.dp)
+            )
         }
     }
 }
-
-// VOICE STUDIO
-
 @Composable
-fun VoiceStudioScreen(onBack: () -> Unit) {
+fun EditorToolPanel(
+    selectedTool: String,
+    subtitleText: String,
+    onSubtitleChange: (String) -> Unit,
+    onImportMedia: () -> Unit,
+    onAudioSelected: (Uri) -> Unit
+) {
     val context = LocalContext.current
 
-    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
-    var audioFile by remember { mutableStateOf<File?>(null) }
-    var importedAudio by remember { mutableStateOf<Uri?>(null) }
-    var isRecording by remember { mutableStateOf(false) }
-    var isPlaying by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Ready to record your voice.") }
+    var audioUri by remember { mutableStateOf<Uri?>(null) }
+    var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var audioPlaying by remember { mutableStateOf(false) }
 
-    fun startRecording() {
-        try {
-            player?.release()
-            player = null
-            isPlaying = false
+    var mouthMoving by remember { mutableStateOf(false) }
+    var bodyMoving by remember { mutableStateOf(false) }
+    var effectStrength by remember { mutableFloatStateOf(0.5f) }
 
-            val file = File(
-                context.filesDir,
-                "NIKI_Voice_${System.currentTimeMillis()}.m4a"
-            )
-
-            val newRecorder =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    MediaRecorder(context)
-                } else {
-                    @Suppress("DEPRECATION")
-                    MediaRecorder()
-                }
-
-            newRecorder.setAudioSource(MediaRecorder.AudioSource.MIC)
-            newRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            newRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            newRecorder.setOutputFile(file.absolutePath)
-            newRecorder.prepare()
-            newRecorder.start()
-
-            recorder = newRecorder
-            audioFile = file
-            importedAudio = null
-            isRecording = true
-            status = "Recording your voice..."
-        } catch (e: Exception) {
-            recorder?.release()
-            recorder = null
-            isRecording = false
-            status = "Recording failed: ${e.message}"
+    val audioPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            audioUri = uri
+            onAudioSelected(uri)
         }
     }
 
-    val permissionLauncher =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-            if (granted) startRecording()
-            else status = "Microphone permission was not granted."
-        }
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText = result.data
+                ?.getStringArrayListExtra(
+                    RecognizerIntent.EXTRA_RESULTS
+                )
+                ?.firstOrNull()
 
-    val audioPicker =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenDocument()
-        ) { uri ->
-            if (uri != null) {
-                importedAudio = uri
-                audioFile = null
-                status = "Audio imported successfully."
+            if (!spokenText.isNullOrBlank()) {
+                onSubtitleChange(
+                    if (subtitleText.isBlank()) spokenText
+                    else "$subtitleText $spokenText"
+                )
             }
-        }
-
-    fun stopRecording() {
-        try {
-            recorder?.stop()
-            status = "Recording saved successfully!"
-        } catch (e: Exception) {
-            audioFile?.delete()
-            audioFile = null
-            status = "Recording could not be saved."
-        } finally {
-            recorder?.release()
-            recorder = null
-            isRecording = false
-        }
-    }
-
-    fun playRecording() {
-        try {
-            player?.release()
-
-            val newPlayer = MediaPlayer()
-            val file = audioFile
-            val uri = importedAudio
-
-            if (file != null && file.exists()) {
-                newPlayer.setDataSource(file.absolutePath)
-            } else if (uri != null) {
-                newPlayer.setDataSource(context, uri)
-            } else {
-                status = "No audio selected."
-                newPlayer.release()
-                return
-            }
-
-            newPlayer.setOnCompletionListener {
-                isPlaying = false
-                status = "Playback completed."
-                it.release()
-                player = null
-            }
-
-            newPlayer.prepare()
-            newPlayer.start()
-            player = newPlayer
-            isPlaying = true
-            status = "Playing your audio..."
-        } catch (e: Exception) {
-            player?.release()
-            player = null
-            isPlaying = false
-            status = "Unable to play this audio."
         }
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            recorder?.release()
-            player?.release()
+            audioPlayer?.release()
+            audioPlayer = null
         }
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Button(onClick = onBack) {
-            Text("← Back to NIKI")
-        }
-
-        Text(
-            "🎙️ Voice Studio",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Navy
-        )
-
-        Text(
-            "Record your voice. Create your story.",
-            color = Color.Gray
-        )
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(Color.White)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text(
-                    if (isRecording) "🔴 Recording in progress"
-                    else "NIKI Voice Recorder",
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Navy
-                )
-
-                Button(
-                    onClick = {
-                        val permission = ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.RECORD_AUDIO
-                        )
-
-                        if (permission == PackageManager.PERMISSION_GRANTED) {
-                            startRecording()
-                        } else {
-                            permissionLauncher.launch(
-                                Manifest.permission.RECORD_AUDIO
-                            )
-                        }
-                    },
-                    enabled = !isRecording,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Start Recording")
-                }
-
-                Button(
-                    onClick = { stopRecording() },
-                    enabled = isRecording,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Stop Recording")
-                }
-
-                OutlinedButton(
-                    onClick = { audioPicker.launch(arrayOf("audio/*")) },
-                    enabled = !isRecording,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Import Audio from Phone")
-                }
-
-                Button(
-                    onClick = { playRecording() },
-                    enabled = !isRecording &&
-                        !isPlaying &&
-                        (audioFile != null || importedAudio != null),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Play Audio")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        player?.release()
-                        player = null
-                        isPlaying = false
-                        audioFile?.delete()
-                        audioFile = null
-                        importedAudio = null
-                        status = "Audio selection cleared."
-                    },
-                    enabled = !isRecording &&
-                        (audioFile != null || importedAudio != null),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Delete / Clear Audio")
-                }
-            }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(LightPurple)
-        ) {
-            Text(
-                status,
-                modifier = Modifier.padding(18.dp),
-                color = Navy,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        Text(
-            "Recordings are stored privately inside NIKI.",
-            color = Color.Gray,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-// SUBTITLE STUDIO
-
-@Composable
-fun SubtitleStudioScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-    var subtitle by remember { mutableStateOf("") }
-    var position by remember { mutableStateOf("Bottom") }
-    var alignment by remember { mutableStateOf("Centre") }
-    var effect by remember { mutableStateOf("Normal") }
-    var textSize by remember { mutableFloatStateOf(24f) }
-    var textColour by remember { mutableStateOf(Color.White) }
-    var backgroundColour by remember {
-    mutableStateOf(Color.DarkGray)
-}
-
-var useImage by remember {
-    mutableStateOf(false)
-}
-
-var showTextBackground by remember {
-    mutableStateOf(true)
-}
-var status by remember {
-mutableStateOf("Ready to create subtitles.")
-}
-
-var selectedImage by remember {
-mutableStateOf<ImageBitmap?>(null)
-}
-
-val imagePicker =
-rememberLauncherForActivityResult(
-ActivityResultContracts.OpenDocument()
-) { uri ->
-if (uri != null) {
-try {
-val bitmap = context.contentResolver
-.openInputStream(uri)
-?.use { BitmapFactory.decodeStream(it) }
-
-            if (bitmap != null) {
-                selectedImage = bitmap.asImageBitmap()
-                useImage = true
-                status = "Background image loaded."
-            } else {
-                status = "Unable to load image."
-            }
-        } catch (e: Exception) {
-            status = "Image loading failed."
-        }
-    }
-}
-
-val speechLauncher =
-rememberLauncherForActivityResult(
-ActivityResultContracts.StartActivityForResult()
-) { result ->
-if (result.resultCode == Activity.RESULT_OK) {
-val words = result.data
-?.getStringArrayListExtra(
-RecognizerIntent.EXTRA_RESULTS
-)
-
-        if (!words.isNullOrEmpty()) {
-            subtitle = words[0]
-            status = "Speech converted to text."
-        }
-    } else {
-        status = "Speech recognition cancelled."
-    }
-}
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        TextButton(onClick = onBack) {
-            Text("← Back to NIKI", color = Purple)
-        }
-
-        Text(
-            "✍️ Subtitle Studio",
-            fontSize = 27.sp,
-            fontWeight = FontWeight.Bold,
-            color = Navy
-        )
-
-        Text("Create and customize your subtitles.", color = Color.Gray)
-Button(
-onClick = {
-imagePicker.launch(arrayOf("image/*"))
-},
-modifier = Modifier.fillMaxWidth()
-) {
-Text("🖼️ Upload Background Image")
-}
-
-Row(
-modifier = Modifier.fillMaxWidth(),
-horizontalArrangement = Arrangement.spacedBy(8.dp)
-) {
-FilterChip(
-selected = useImage,
-onClick = {
-if (selectedImage != null) useImage = true
-},
-label = { Text("Image Background") }
-)
-
-FilterChip(
-    selected = !useImage,
-    onClick = { useImage = false },
-    label = { Text("Colour Background") }
-)
-
-}
-
-Text("BACKGROUND COLOUR", fontWeight = FontWeight.Bold)
-
-Row(
-horizontalArrangement = Arrangement.spacedBy(10.dp)
-) {
-listOf(
-Color.Black,
-Color.DarkGray,
-Color.Blue,
-Color(0xFF7755DD),
-Color.Red,
-Color.Green,
-Color.White
-).forEach { colour ->
-Box(
-modifier = Modifier
-.size(34.dp)
-.background(colour, RoundedCornerShape(8.dp))
-.clickable {
-backgroundColour = colour
-useImage = false
-}
-)
-}
-}
-
-Button(
-onClick = {
-try {
-val intent = Intent(
-RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-).apply {
-putExtra(
-RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-)
-putExtra(
-RecognizerIntent.EXTRA_LANGUAGE,
-Locale.getDefault()
-)
-putExtra(
-RecognizerIntent.EXTRA_PROMPT,
-"Speak your subtitle"
-)
-}
-speechLauncher.launch(intent)
-} catch (e: Exception) {
-status = "Speech recognition is unavailable."
-}
-},
-modifier = Modifier.fillMaxWidth()
-) {
-Text("🎙️ Speak and Create Subtitles")
-}
-        OutlinedTextField(
-            value = subtitle,
-            onValueChange = { subtitle = it },
-            label = { Text("Enter your subtitle") },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 3
-        )
-
-        Text("SUBTITLE PREVIEW", fontWeight = FontWeight.Bold, color = Purple)
-
-Box(
-    modifier = Modifier
-        .fillMaxWidth()
-        .height(230.dp)
-        .background(
-            if (useImage) Color.Black else backgroundColour,
-            RoundedCornerShape(16.dp)
-        ),
-    contentAlignment = when (position) {
-        "Top" -> Alignment.TopCenter
-        "Middle" -> Alignment.Center
-        else -> Alignment.BottomCenter
-    }
-) {
-    if (useImage && selectedImage != null) {
-        Image(
-            bitmap = selectedImage!!,
-            contentDescription = "Subtitle background image",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-    }
-
-    Text(
-        text = subtitle.ifBlank {
-            "Your subtitles appear here"
-        },
-        color = textColour,
-        fontSize = textSize.sp,
-        fontWeight = FontWeight.Bold,
-        textAlign = when (alignment) {
-            "Left" -> TextAlign.Left
-            "Right" -> TextAlign.Right
-            else -> TextAlign.Center
-        },
         modifier = Modifier
             .fillMaxWidth()
-            .padding(12.dp)
-            .background(
-                if (showTextBackground)
-                    Color.Black.copy(alpha = 0.45f)
-                else Color.Transparent,
-                RoundedCornerShape(8.dp)
-            )
-            .padding(8.dp)
-    )
-}
-
-        Text("SUBTITLE POSITION", fontWeight = FontWeight.Bold, color = Navy)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Top", "Middle", "Bottom").forEach {
-                FilterChip(
-                    selected = position == it,
-                    onClick = { position = it },
-                    label = { Text(it) }
-                )
-            }
-        }
-
-        Text("TEXT ALIGNMENT", fontWeight = FontWeight.Bold, color = Navy)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Left", "Centre", "Right").forEach {
-                FilterChip(
-                    selected = alignment == it,
-                    onClick = { alignment = it },
-                    label = { Text(it) }
-                )
-            }
-        }
-Text("TEXT COLOUR", fontWeight = FontWeight.Bold, color = Navy)
-
-Row(
-    horizontalArrangement = Arrangement.spacedBy(10.dp)
-) {
-    listOf(
-        Color.White,
-        Color.Yellow,
-        Color.Red,
-        Color.Green,
-        Color.Cyan,
-        Color.Black
-    ).forEach { colour ->
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .background(colour, RoundedCornerShape(8.dp))
-                .clickable {
-                    textColour = colour
-                }
-        )
-    }
-}
-
-Row(
-    modifier = Modifier.fillMaxWidth(),
-    verticalAlignment = Alignment.CenterVertically
-) {
-    Text(
-        "Subtitle text background",
-        modifier = Modifier.weight(1f)
-    )
-
-    Switch(
-        checked = showTextBackground,
-        onCheckedChange = {
-            showTextBackground = it
-        }
-    )
-}
-        Text("SUBTITLE EFFECT", fontWeight = FontWeight.Bold, color = Navy)
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Normal", "Scrolling").forEach {
-                FilterChip(
-                    selected = effect == it,
-                    onClick = { effect = it },
-                    label = { Text(it) }
-                )
-            }
-        }
-
-        Text(
-            "TEXT SIZE: ${textSize.toInt()} SP",
-            fontWeight = FontWeight.Bold,
-            color = Navy
-        )
-
-        Slider(
-            value = textSize,
-            onValueChange = { textSize = it },
-            valueRange = 14f..40f
-        )
-
-        Button(
-            onClick = { subtitle = "" },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Clear Subtitle")
-        }
-
-        Text(
-            "Your subtitle settings are ready for video integration.",
-            color = Purple,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
-
-// LIPSYNC STUDIO
-
-@Composable
-fun LipSyncStudioScreen(onBack: () -> Unit) {
-    val context = LocalContext.current
-
-    var selectedImage by remember {
-        mutableStateOf<ImageBitmap?>(null)
-    }
-
-    var imageName by remember {
-        mutableStateOf("No photograph selected")
-    }
-
-    var speakerSelected by remember {
-        mutableStateOf(false)
-    }
-
-    var mouthX by remember { mutableFloatStateOf(0.5f) }
-    var mouthY by remember { mutableFloatStateOf(0.65f) }
-
-    var audioFile by remember { mutableStateOf<File?>(null) }
-    var importedAudio by remember { mutableStateOf<Uri?>(null) }
-
-    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
-    var player by remember { mutableStateOf<MediaPlayer?>(null) }
-
-    var isRecording by remember { mutableStateOf(false) }
-    var isPlaying by remember { mutableStateOf(false) }
-
-    var status by remember {
-        mutableStateOf("Choose a photograph to begin.")
-    }
-
-    val imagePicker =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenDocument()
-        ) { uri ->
-            if (uri != null) {
-                try {
-                    val bitmap = context.contentResolver
-                        .openInputStream(uri)
-                        ?.use { BitmapFactory.decodeStream(it) }
-
-                    if (bitmap != null) {
-                        selectedImage = bitmap.asImageBitmap()
-                        imageName = "Photograph loaded successfully."
-                        speakerSelected = false
-                        status = "Tap the mouth area of the person who should speak."
-                    } else {
-                        status = "Unable to open this photograph."
-                    }
-                } catch (e: Exception) {
-                    status = "Image could not be loaded."
-                }
-            }
-        }
-
-    val audioPicker =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.OpenDocument()
-        ) { uri ->
-            if (uri != null) {
-                importedAudio = uri
-                audioFile = null
-                status = "Audio imported. Ready for playback."
-            }
-        }
-
-    fun startRecording() {
-        try {
-            player?.release()
-            player = null
-            isPlaying = false
-
-            val file = File(
-                context.filesDir,
-                "NIKI_LipSync_${System.currentTimeMillis()}.m4a"
-            )
-
-            val newRecorder =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    MediaRecorder(context)
-                } else {
-                    @Suppress("DEPRECATION")
-                    MediaRecorder()
-                }
-
-            newRecorder.setAudioSource(MediaRecorder.AudioSource.MIC)
-            newRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            newRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            newRecorder.setOutputFile(file.absolutePath)
-            newRecorder.prepare()
-            newRecorder.start()
-
-            recorder = newRecorder
-            audioFile = file
-            importedAudio = null
-            isRecording = true
-            status = "Recording your speaker's voice..."
-        } catch (e: Exception) {
-            recorder?.release()
-            recorder = null
-            isRecording = false
-            status = "Recording failed: ${e.message}"
-        }
-    }
-
-    val permissionLauncher =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-            if (granted) {
-                startRecording()
-            } else {
-                status = "Microphone permission was not granted."
-            }
-        }
-
-    fun stopRecording() {
-        try {
-            recorder?.stop()
-            status = "Voice recording saved!"
-        } catch (e: Exception) {
-            audioFile?.delete()
-            audioFile = null
-            status = "Recording could not be saved."
-        } finally {
-            recorder?.release()
-            recorder = null
-            isRecording = false
-        }
-    }
-
-    fun playAudio() {
-        try {
-            player?.release()
-            player = null
-
-            val newPlayer = MediaPlayer()
-            val file = audioFile
-            val uri = importedAudio
-
-            if (file != null && file.exists()) {
-                newPlayer.setDataSource(file.absolutePath)
-            } else if (uri != null) {
-                newPlayer.setDataSource(context, uri)
-            } else {
-                status = "Please record or import audio first."
-                newPlayer.release()
-                return
-            }
-
-            newPlayer.setOnCompletionListener {
-                isPlaying = false
-                status = "Playback completed."
-                it.release()
-                player = null
-            }
-
-            newPlayer.prepare()
-            newPlayer.start()
-
-            player = newPlayer
-            isPlaying = true
-            status = "Speaking... Watch the selected person's mouth!"
-        } catch (e: Exception) {
-            player?.release()
-            player = null
-            isPlaying = false
-            status = "Unable to play this audio."
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            recorder?.release()
-            player?.release()
-        }
-    }
-
-    val infiniteTransition = rememberInfiniteTransition(label = "mouth")
-
-    val mouthHeight by infiniteTransition.animateFloat(
-        initialValue = 5f,
-        targetValue = 30f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = 240,
-                easing = FastOutSlowInEasing
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "mouthOpening"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
+            .heightIn(max = 260.dp)
             .verticalScroll(rememberScrollState())
-            .padding(18.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(15.dp)
+            .background(Navy, RoundedCornerShape(14.dp))
+            .padding(12.dp)
     ) {
-        Button(onClick = onBack) {
-            Text("← Back to NIKI")
-        }
 
-        Text(
-            "👄 LipSync Studio",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = Navy
-        )
+        when (selectedTool) {
 
-        Text(
-            "Choose who speaks. Give your photograph a voice.",
-            color = Color.Gray,
-            textAlign = TextAlign.Center
-        )
+            "Media" -> {
+                Text(
+                    "MEDIA LIBRARY",
+                    color = LightPurple,
+                    fontWeight = FontWeight.Bold
+                )
 
-        Button(
-            onClick = { imagePicker.launch(arrayOf("image/*")) },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Choose Photograph")
-        }
+                Spacer(Modifier.height(8.dp))
 
-        Text(
-            imageName,
-            color = Purple,
-            textAlign = TextAlign.Center
-        )
+                Button(
+                    onClick = onImportMedia,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Import Photos, Videos or Audio")
+                }
+            }
 
-        Text(
-            "SELECT YOUR SPEAKER",
-            fontWeight = FontWeight.Bold,
-            color = Navy
-        )
+            "Audio" -> {
+                Text(
+                    "AUDIO WORKSPACE",
+                    color = LightPurple,
+                    fontWeight = FontWeight.Bold
+                )
 
-        Text(
-            "Tap the mouth area of the person you want to speak. " +
-                "If there are several people, select only one.",
-            color = Color.Gray,
-            textAlign = TextAlign.Center,
-            fontSize = 13.sp
-        )
+                Spacer(Modifier.height(8.dp))
 
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(320.dp)
-                .background(Color(0xFFE3E0EA), RoundedCornerShape(16.dp))
-                .pointerInput(selectedImage) {
-                    detectTapGestures { tap ->
-                        if (selectedImage != null) {
-                            mouthX = (tap.x / size.width).coerceIn(0f, 1f)
-                            mouthY = (tap.y / size.height).coerceIn(0f, 1f)
-                            speakerSelected = true
-                            status = "Speaker selected! You can adjust the mouth position by tapping again."
+                Button(
+                    onClick = {
+                        audioPicker.launch(arrayOf("audio/*"))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Import Audio")
+                }
+
+                if (audioUri != null) {
+                    Text(
+                        "Audio selected successfully",
+                        color = Color.White
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                try {
+                                    if (audioPlaying) {
+                                        audioPlayer?.pause()
+                                        audioPlaying = false
+                                    } else {
+                                        if (audioPlayer == null) {
+                                            audioPlayer =
+                                                MediaPlayer.create(
+                                                    context,
+                                                    audioUri
+                                                )
+                                        }
+
+                                        audioPlayer?.setOnCompletionListener {
+                                            audioPlaying = false
+                                        }
+
+                                        audioPlayer?.start()
+                                        audioPlaying = true
+                                    }
+                                } catch (e: Exception) {
+                                    audioPlaying = false
+                                }
+                            }
+                        ) {
+                            Text(
+                                if (audioPlaying) "Pause" else "Play Audio"
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                audioPlayer?.release()
+                                audioPlayer = null
+                                audioUri = null
+                                audioPlaying = false
+                            }
+                        ) {
+                            Text("Remove")
                         }
                     }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            if (selectedImage != null) {
-                Image(
-                    bitmap = selectedImage!!,
-                    contentDescription = "Selected speaker photograph",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
+                }
+
+                Text(
+                    "Voice recording and advanced audio editing will be connected to this workspace in the next development stage.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+            }
+
+            "Subtitles" -> {
+                Text(
+                    "SUBTITLE STUDIO",
+                    color = LightPurple,
+                    fontWeight = FontWeight.Bold
                 )
 
-                if (speakerSelected) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        val animatedHeight =
-                            if (isPlaying) mouthHeight else 5f
+                Spacer(Modifier.height(8.dp))
 
-                        drawOval(
-                            color = Color(0xFF4B1018),
-                            topLeft = Offset(
-                                x = mouthX * size.width - 21.dp.toPx(),
-                                y = mouthY * size.height - animatedHeight.dp.toPx() / 2
-                            ),
-                            size = Size(
-                                width = 42.dp.toPx(),
-                                height = animatedHeight.dp.toPx()
-                            )
-                        )
+                OutlinedTextField(
+                    value = subtitleText,
+                    onValueChange = onSubtitleChange,
+                    label = { Text("Write your subtitles") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2
+                )
 
-                        drawOval(
-                            color = Color.White.copy(alpha = 0.8f),
-                            topLeft = Offset(
-                                x = mouthX * size.width - 21.dp.toPx(),
-                                y = mouthY * size.height - animatedHeight.dp.toPx() / 2
-                            ),
-                            size = Size(
-                                width = 42.dp.toPx(),
-                                height = animatedHeight.dp.toPx()
-                            ),
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                width = 1.dp.toPx()
+                Spacer(Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        try {
+                            val intent = Intent(
+                                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+                            ).apply {
+                                putExtra(
+                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                                )
+                                putExtra(
+                                    RecognizerIntent.EXTRA_LANGUAGE,
+                                    Locale.getDefault()
+                                )
+                                putExtra(
+                                    RecognizerIntent.EXTRA_PROMPT,
+                                    "Speak your subtitle"
+                                )
+                            }
+
+                            speechLauncher.launch(intent)
+                        } catch (e: Exception) {
+                            onSubtitleChange(
+                                subtitleText.ifBlank {
+                                    "Speech recognition is unavailable."
+                                }
                             )
-                        )
-                    }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Speak to Create Subtitles")
                 }
-            } else {
+
                 Text(
-                    "Your photograph will appear here.",
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center
+                    "Your text appears over the preview. Subtitle timing and animation will be added to the timeline in a later stage.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+            }
+
+            "Lip Sync" -> {
+                Text(
+                    "NIKI LIP SYNC",
+                    color = LightPurple,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    "Create a talking-photo animation prototype.",
+                    color = Color.White
+                )
+
+                Button(
+                    onClick = {
+                        mouthMoving = !mouthMoving
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (mouthMoving)
+                            "Stop Mouth Animation"
+                        else
+                            "Test Mouth Animation"
+                    )
+                }
+
+                val mouthSize by animateFloatAsState(
+                    targetValue = if (mouthMoving) 1.5f else 1f,
+                    label = "mouth"
+                )
+
+                Text(
+                    "●",
+                    color = LightPurple,
+                    fontSize = (30 * mouthSize).sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+
+                Text(
+                    "This is an animation test, not yet real photo lip synchronization.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+            }
+
+            "Body Motion" -> {
+                Text(
+                    "NIKI BODY MOTION",
+                    color = LightPurple,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    "Test simple character movement.",
+                    color = Color.White
+                )
+
+                Button(
+                    onClick = {
+                        bodyMoving = !bodyMoving
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        if (bodyMoving)
+                            "Stop Movement"
+                        else
+                            "Start Movement"
+                    )
+                }
+
+                val transition = rememberInfiniteTransition(
+                    label = "bodyMotion"
+                )
+
+                val rotation by transition.animateFloat(
+                    initialValue = -8f,
+                    targetValue = 8f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(500),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "rotation"
+                )
+
+                val movement = if (bodyMoving) rotation else 0f
+
+                Text(
+                    "●",
+                    color = LightPurple,
+                    fontSize = 45.sp,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .graphicsLayer {
+                            rotationZ = movement
+                        }
+                )
+
+                Text(
+                    "This is a simple movement demonstration. Photo-based gestures and KinetiFrame integration still need to be implemented.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+            }
+
+            "Effects" -> {
+                Text(
+                    "VIDEO EFFECTS",
+                    color = LightPurple,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    "Effect intensity",
+                    color = Color.White
+                )
+
+                Slider(
+                    value = effectStrength,
+                    onValueChange = {
+                        effectStrength = it
+                    },
+                    valueRange = 0f..1f
+                )
+
+                Text(
+                    "${(effectStrength * 100).toInt()}% intensity",
+                    color = LightPurple
+                )
+
+                Text(
+                    "This is an intensity control prototype. Actual video effects will be connected during rendering development.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
                 )
             }
         }
-
-        Text(
-            if (speakerSelected) {
-                "✅ Speaker selected. Tap again to reposition the mouth."
-            } else {
-                "No speaker selected yet."
-            },
-            color = if (speakerSelected) Purple else Color.Gray,
-            textAlign = TextAlign.Center
-        )
-
-        HorizontalDivider()
-
-        Text(
-            "ADD YOUR VOICE",
-            fontWeight = FontWeight.Bold,
-            color = Navy
-        )
-
-        Button(
-            onClick = {
-                val permission = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.RECORD_AUDIO
-                )
-
-                if (permission == PackageManager.PERMISSION_GRANTED) {
-                    startRecording()
-                } else {
-                    permissionLauncher.launch(
-                        Manifest.permission.RECORD_AUDIO
-                    )
-                }
-            },
-            enabled = !isRecording && !isPlaying,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("🎙️ Record Voice")
-        }
-
-        Button(
-            onClick = { stopRecording() },
-            enabled = isRecording,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Stop Recording")
-        }
-
-        OutlinedButton(
-            onClick = { audioPicker.launch(arrayOf("audio/*")) },
-            enabled = !isRecording && !isPlaying,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Import Audio from Phone")
-        }
-
-        Button(
-            onClick = { playAudio() },
-            enabled = !isRecording &&
-                !isPlaying &&
-                speakerSelected &&
-                (audioFile != null || importedAudio != null),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("▶ Play LipSync")
-        }
-
-        OutlinedButton(
-            onClick = {
-                player?.release()
-                player = null
-                isPlaying = false
-                audioFile?.delete()
-                audioFile = null
-                importedAudio = null
-                status = "Audio cleared."
-            },
-            enabled = !isRecording &&
-                (audioFile != null || importedAudio != null),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Clear Audio")
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(LightPurple)
-        ) {
-            Text(
-                status,
-                modifier = Modifier.padding(18.dp),
-                color = Navy,
-                textAlign = TextAlign.Center
-            )
-        }
-
-        Text(
-            "This first version uses a simple animated mouth overlay. " +
-                "More advanced facial animation and video export will come later.",
-            color = Color.Gray,
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
     }
 }
