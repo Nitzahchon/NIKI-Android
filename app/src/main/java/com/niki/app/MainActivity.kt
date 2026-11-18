@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.Switch
@@ -258,18 +259,18 @@ fun EditorScreen() {
                         }
                     },
                     update = { videoView ->
-                        if (videoView.tag != current.uri.toString()) {
-                            videoView.tag = current.uri.toString()
-                            videoView.setVideoURI(current.uri)
+    if (videoView.tag != current.uri.toString()) {
+        videoView.tag = current.uri.toString()
+        videoView.setVideoURI(current.uri)
 
-                            videoView.setOnPreparedListener {
-                                it.isLooping = true
-                                start()
-                                isPlaying = true
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
+        videoView.setOnPreparedListener { mediaPlayer ->
+    mediaPlayer.isLooping = true
+    videoView.start()
+    isPlaying = true
+        }
+    }
+},
+modifier = Modifier.fillMaxSize()
                 )
 
             } else {
