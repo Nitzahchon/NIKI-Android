@@ -1,4 +1,6 @@
-package com.niki.app
+import android.widget.VideoView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.horizontalScrollpackage com.niki.app
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -78,10 +80,398 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun NikiApp() {
-    var selectedStudio by remember {
-        mutableStateOf<Studio?>(null)
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Background
+    ) {
+        EditorScreen()
+    }
+}
+data class EditorMedia(
+    val uri: Uri,
+    val name: String,
+    val type: String
+)
+
+@Composable
+fun EditorScreen() {
+    val context = LocalContext.current
+
+    var mediaList by remember {
+        mutableStateOf(listOf<EditorMedia>())
     }
 
+    var selectedMedia by remember {
+        mutableStateOf<EditorMedia?>(null)
+    }
+
+    var selectedTool by remember {
+        mutableStateOf("Media")
+    }
+
+    var isPlaying by remember {
+        mutableStateOf(false)
+    }
+
+    val mediaPicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenMultipleDocuments()
+        ) { uris ->
+
+            val newMedia = uris.map { uri ->
+
+                val mime = context.contentResolver
+                    .getType(uri) ?: ""
+
+                val type = when {
+                    mime.startsWith("image/") -> "Image"
+                    mime.startsWith("video/") -> "Video"
+                    mime.startsWith("audio/") -> "Audio"
+                    else -> "Media"
+                }
+
+                EditorMedia(
+                    uri = uri,
+                    name = uri.lastPathSegment ?: type,
+                    type = type
+                )
+            }
+
+            mediaList = mediaList + newMedia
+
+            if (selectedMedia == null && newMedia.isNotEmpty()) {
+                selectedMedia = newMedia.first()
+            }
+        }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF111111))
+    ) {
+
+        // TOP BAR
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Navy)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "NIKI",
+                fontSize = 25.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White,
+                modifier = Modifier.weight(1f)
+            )
+
+            Text(
+                "EXPORT",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(Purple, RoundedCornerShape(8.dp))
+                    .clickable {
+                        // Export will be implemented later.
+                    }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        }
+
+        // VIDEO PREVIEW
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(12.dp)
+                .background(Color.Black, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+
+            val current = selectedMedia
+
+            if (current == null) {
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("🎬", fontSize = 55.sp)
+
+                    Text(
+                        "Your video preview",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        "Import photos or videos to begin",
+                        color = Color.LightGray,
+                        fontSize = 13.sp
+                    )
+                }
+
+            } else if (current.type == "Image") {
+
+                val bitmap = remember(current.uri) {
+                    try {
+                        context.contentResolver
+                            .openInputStream(current.uri)
+                            ?.use {
+                                BitmapFactory.decodeStream(it)
+                                    ?.asImageBitmap()
+                            }
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = "Video preview",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    Text(
+                        "Unable to display image",
+                        color = Color.White
+                    )
+                }
+
+            } else if (current.type == "Video") {
+
+                AndroidView(
+                    factory = { viewContext ->
+                        VideoView(viewContext).apply {
+                            setVideoURI(current.uri)
+
+                            setOnPreparedListener {
+                                it.isLooping = true
+                                start()
+                                isPlaying = true
+                            }
+                        }
+                    },
+                    update = { videoView ->
+                        if (videoView.tag != current.uri.toString()) {
+                            videoView.tag = current.uri.toString()
+                            videoView.setVideoURI(current.uri)
+
+                            videoView.setOnPreparedListener {
+                                it.isLooping = true
+                                start()
+                                isPlaying = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+            } else {
+
+                Text(
+                    "🎵 Audio added to your project",
+                    color = Color.White
+                )
+            }
+        }
+
+        // PLAYBACK CONTROLS
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(
+                onClick = {
+                    isPlaying = !isPlaying
+                }
+            ) {
+                Text(
+                    if (isPlaying) "Ⅱ Pause" else "▶ Play",
+                    color = Color.White,
+                    fontSize = 18.sp
+                )
+            }
+        }
+
+        // TIMELINE
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF202020))
+                .padding(12.dp)
+        ) {
+
+            Text(
+                "TIMELINE",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.horizontalScroll(
+                    rememberScrollState()
+                )
+            ) {
+
+                if (mediaList.isEmpty()) {
+                    Text(
+                        "Your imported clips will appear here.",
+                        color = Color.LightGray,
+                        fontSize = 12.sp
+                    )
+                }
+
+                mediaList.forEach { item ->
+
+                    Column(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .background(
+                                if (selectedMedia == item)
+                                    Purple
+                                else Color.DarkGray,
+                                RoundedCornerShape(8.dp)
+                            )
+                            .clickable {
+                                selectedMedia = item
+                            }
+                            .padding(12.dp)
+                    ) {
+
+                        Text(
+                            when (item.type) {
+                                "Image" -> "🖼️"
+                                "Video" -> "🎬"
+                                "Audio" -> "🎵"
+                                else -> "📁"
+                            },
+                            fontSize = 22.sp
+                        )
+
+                        Text(
+                            item.type,
+                            color = Color.White,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // EDITING TOOLS
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Navy)
+                .padding(vertical = 10.dp)
+        ) {
+
+            Row(
+                modifier = Modifier.horizontalScroll(
+                    rememberScrollState()
+                ),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+
+                listOf(
+                    "Media",
+                    "Audio",
+                    "Text",
+                    "LipSync",
+                    "Motion",
+                    "Effects"
+                ).forEach { tool ->
+
+                    FilterChip(
+                        selected = selectedTool == tool,
+                        onClick = {
+                            selectedTool = tool
+                        },
+                        label = { Text(tool) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            when (selectedTool) {
+
+                "Media" -> {
+                    Button(
+                        onClick = {
+                            mediaPicker.launch(
+                                arrayOf(
+                                    "image/*",
+                                    "video/*",
+                                    "audio/*"
+                                )
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                    ) {
+                        Text("＋ Import Photos, Videos and Audio")
+                    }
+                }
+
+                "Audio" -> {
+                    Text(
+                        "🎙️ Record voice  |  🎵 Import audio",
+                        color = Color.White,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+
+                "Text" -> {
+                    Text(
+                        "✍️ Add and customize subtitles",
+                        color = Color.White,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+
+                "LipSync" -> {
+                    Text(
+                        "👄 Animate a photograph to speak",
+                        color = Color.White,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+
+                "Motion" -> {
+                    Text(
+                        "🕺 Create body movements and gestures",
+                        color = Color.White,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+
+                "Effects" -> {
+                    Text(
+                        "✨ Visual and audio effects",
+                        color = Color.White,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+            }
+        }
+    }
+}
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Background
