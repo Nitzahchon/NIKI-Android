@@ -1,11 +1,8 @@
-import android.widget.VideoView
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.foundation.horizontalScrollpackage com.niki.app
+package com.niki.app
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
-import androidx.compose.material3.Switch
-import java.util.Locale
+import android.widget.VideoView
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
@@ -14,10 +11,13 @@ import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.compose.foundation.basicMarquee
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material3.Switch
+import androidx.compose.ui.viewinterop.AndroidView
+import java.util.Locale
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
@@ -472,20 +472,7 @@ fun EditorScreen() {
         }
     }
 }
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Background
-    ) {
-        if (selectedStudio == null) {
-            HomeScreen { selectedStudio = it }
-        } else {
-            StudioScreen(
-                studio = selectedStudio!!,
-                onBack = { selectedStudio = null }
-            )
-        }
-    }
-}
+    
 
 @Composable
 fun HomeScreen(onStudioClick: (Studio) -> Unit) {
