@@ -1,4 +1,4 @@
-package com.niki.app
+cpackage com.niki.app
 
 import android.Manifest
 import android.app.Activity
@@ -709,67 +709,8 @@ fun EditorToolPanel(
                     fontSize = 12.sp
                 )
             }
-
             "Body Motion" -> {
-                Text(
-                    "NIKI BODY MOTION",
-                    color = LightPurple,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    "Test simple character movement.",
-                    color = Color.White
-                )
-
-                Button(
-                    onClick = {
-                        bodyMoving = !bodyMoving
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        if (bodyMoving)
-                            "Stop Movement"
-                        else
-                            "Start Movement"
-                    )
-                }
-
-                val transition = rememberInfiniteTransition(
-                    label = "bodyMotion"
-                )
-
-                val rotation by transition.animateFloat(
-                    initialValue = -8f,
-                    targetValue = 8f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(500),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "rotation"
-                )
-
-                val movement = if (bodyMoving) rotation else 0f
-
-                Text(
-                    "●",
-                    color = LightPurple,
-                    fontSize = 45.sp,
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .graphicsLayer {
-                            rotationZ = movement
-                        }
-                )
-
-                Text(
-                    "This is a simple movement demonstration. Photo-based gestures and KinetiFrame integration still need to be implemented.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
+                NikiBodyMotionPanel()
             }
 
             "Effects" -> {
