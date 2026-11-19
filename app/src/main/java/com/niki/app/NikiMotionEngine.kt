@@ -44,15 +44,14 @@ object NikiMotionEngine {
     ): NikiMotionFrame {
 
         val duration = preset.durationMs.coerceAtLeast(1L)
-        val adjustedTime = elapsedMs * speed.coerceIn(0.1f, 3f)
-
+        val adjustedTime = elapsedMs.toFloat() * speed.coerceIn(0.1f, 3f)
         val progress = if (preset.looping) {
-            (adjustedTime % duration) / duration.toFloat()
-        } else {
-            (adjustedTime.coerceAtMost(duration)) / duration.toFloat()
-        }
+    (adjustedTime % duration.toFloat()) / duration.toFloat()
+} else {
+    adjustedTime.coerceAtMost(duration.toFloat()) / duration.toFloat()
+}
 
-        val finished = !preset.looping && adjustedTime >= duration
+        val finished = !preset.looping && adjustedTime >= duration.toFloat()
 
         val phase = progress * 2f * PI.toFloat()
         val wave = sin(phase)
