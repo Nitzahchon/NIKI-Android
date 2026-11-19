@@ -1,4 +1,4 @@
-cpackage com.niki.app
+package com.niki.app
 
 import android.Manifest
 import android.app.Activity
