@@ -66,15 +66,7 @@ data class NikiVoiceSettings(
     val speed: Float = 1f
 )
 
-data class NikiRigBone(
-    val id: String,
-    val parentId: String?,
-    val x: Float,
-    val y: Float,
-    val length: Float,
-    val restRotation: Float = 0f,
-    val rotation: Float = restRotation
-)
+
 
 data class NikiCharacter(
     val id: String,
