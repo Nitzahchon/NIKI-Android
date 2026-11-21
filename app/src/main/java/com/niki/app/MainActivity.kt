@@ -78,7 +78,14 @@ fun EditorScreen() {
     var subtitleText by remember { mutableStateOf("") }
     var isPlaying by remember { mutableStateOf(false) }
     var audioUri by remember { mutableStateOf<Uri?>(null) }
+    
+var mouthFrame by remember {
+    mutableStateOf(NikiLipSyncEngine.closedMouth())
+}
 
+var mouthPosition by remember {
+    mutableStateOf(NikiMouthPosition())
+}
     val mediaPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
@@ -151,38 +158,40 @@ fun EditorScreen() {
 
         // VIDEO PREVIEW
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .background(Navy, RoundedCornerShape(16.dp)),
-            contentAlignment = Alignment.Center
+Box(
+    modifier = Modifier
+        .fillMaxWidth()
+        .weight(1f)
+        .background(Navy, RoundedCornerShape(16.dp)),
+    contentAlignment = Alignment.Center
+) {
+    if (selectedMedia == null) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (selectedMedia == null) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "NIKI STUDIO",
-                        color = LightPurple,
-                        fontSize = 23.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+            Text(
+                "NIKI STUDIO",
+                color = LightPurple,
+                fontSize = 23.sp,
+                fontWeight = FontWeight.Bold
+            )
 
-                    Text(
-                        "Import photos, videos or audio",
-                        color = Color.White
-                    )
-                }
-            } else {
-                MediaPreview(
-                    media = selectedMedia!!,
-                    subtitle = subtitleText
-                )
-            }
+            Text(
+                "Import photos, videos or audio",
+                color = Color.White
+            )
         }
-
+    } else {
+        MediaPreview(
+            media = selectedMedia!!,
+            subtitle = subtitleText,
+            mouthOpenness = mouthFrame.openness,
+            mouthPosition = mouthPosition
+        )
+    }
+}
         Spacer(modifier = Modifier.height(10.dp))
+
 
         // PLAYBACK CONTROLS
 
@@ -343,7 +352,7 @@ fun MediaPreview(
     subtitle: String,
     mouthOpenness: Float,
     mouthPosition: NikiMouthPosition
-) {
+){ 
     val context = LocalContext.current
 
     Box(
@@ -486,7 +495,8 @@ fun EditorToolPanel(
 ) {
     val context = LocalContext.current
 
-    var audioUri by remember { mutableStateOf<Uri?>(null) }
+    var audioUri by remember { mutableStateOf<Uri?>(null) } 
+    
     var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var audioPlaying by remember { mutableStateOf(false) }
 
