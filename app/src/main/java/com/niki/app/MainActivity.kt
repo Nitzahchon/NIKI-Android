@@ -335,11 +335,12 @@ fun EditorScreen() {
             }
         )
     }
-}
 @Composable
 fun MediaPreview(
     media: EditorMedia,
-    subtitle: String
+    subtitle: String,
+    mouthOpenness: Float,
+    mouthPosition: NikiMouthPosition
 ) {
     val context = LocalContext.current
 
@@ -425,6 +426,35 @@ fun MediaPreview(
             }
         }
 
+        // STAGE FOUR: NIKI MOUTH ANIMATION
+        if (media.type == "Image") {
+            Canvas(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                val position = mouthPosition.normalized()
+
+                val mouthWidth = size.width * 0.09f
+
+                val mouthHeight = (
+                    size.height * 0.025f *
+                    mouthOpenness.coerceIn(0f, 1f)
+                ).coerceAtLeast(3f)
+
+                drawOval(
+                    color = Color(0xFF241018),
+                    topLeft = androidx.compose.ui.geometry.Offset(
+                        size.width * position.x - mouthWidth / 2,
+                        size.height * position.y - mouthHeight / 2
+                    ),
+                    size = androidx.compose.ui.geometry.Size(
+                        mouthWidth,
+                        mouthHeight
+                    )
+                )
+            }
+        }
+
+        // SUBTITLE DISPLAY
         if (subtitle.isNotBlank()) {
             Text(
                 text = subtitle,
@@ -443,6 +473,7 @@ fun MediaPreview(
         }
     }
 }
+
 @Composable
 fun EditorToolPanel(
     selectedTool: String,
