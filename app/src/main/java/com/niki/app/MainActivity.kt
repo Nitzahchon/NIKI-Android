@@ -334,7 +334,9 @@ fun EditorScreen() {
                 audioUri = it
             }
         )
-    }
+    } 
+} 
+    
 @Composable
 fun MediaPreview(
     media: EditorMedia,
