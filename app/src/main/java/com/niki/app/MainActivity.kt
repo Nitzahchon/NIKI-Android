@@ -900,16 +900,20 @@ Spacer(Modifier.height(8.dp))
     )
 }
 
-                        OutlinedButton(
-                            onClick = {
-                                audioPlayer?.release()
-                                audioPlayer = null
-                                audioUri = null
-                                audioPlaying = false
-                            }
-                        ) {
-                            Text("Remove")
-                        }
+      OutlinedButton(
+    onClick = {
+        stopAudioVisualizer()
+
+        audioPlayer?.release()
+        audioPlayer = null
+
+        audioUri = null
+        audioPlaying = false
+        onMouthAmplitude(0f)
+    }
+) {
+    Text("Remove")
+}
                     }
             
                }
