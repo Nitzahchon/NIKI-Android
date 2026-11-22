@@ -498,12 +498,81 @@ fun EditorToolPanel(
     var audioUri by remember { mutableStateOf<Uri?>(null) } 
     
     var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    var audioPlaying by remember { mutableStateOf(false) }
+    var audioPlaying by remember { mutableStateOf(false) } 
+    var audioRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var isRecording by remember { mutableStateOf(false) }
+    var recordingFile by remember { mutableStateOf<File?>(null) }
+    var recorderMessage by remember { mutableStateOf("") }
 
     var mouthMoving by remember { mutableStateOf(false) }
     var bodyMoving by remember { mutableStateOf(false) }
     var effectStrength by remember { mutableFloatStateOf(0.5f) }
+    fun startRecording() {
+    try {
+        val folder = context.getExternalFilesDir(
+            android.os.Environment.DIRECTORY_MUSIC
+        ) ?: context.filesDir
 
+        val file = File(
+            folder,
+            "NIKI_${System.currentTimeMillis()}.m4a"
+        )
+
+        val recorder = MediaRecorder()
+
+        recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+        recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+        recorder.setOutputFile(file.absolutePath)
+
+        recorder.prepare()
+        recorder.start()
+
+        recordingFile = file
+        audioRecorder = recorder
+        isRecording = true
+        recorderMessage = "Recording in progress..."
+    } catch (e: Exception) {
+        audioRecorder?.release()
+        audioRecorder = null
+        isRecording = false
+        recorderMessage = "Unable to start recording."
+    }
+}
+
+fun stopRecording() {
+    try {
+        audioRecorder?.stop()
+        audioRecorder?.release()
+        audioRecorder = null
+        isRecording = false
+
+        recordingFile?.let { file ->
+            if (file.exists()) {
+                val uri = Uri.fromFile(file)
+                audioUri = uri
+                onAudioSelected(uri)
+                recorderMessage = "Recording saved successfully."
+            }
+        }
+    } catch (e: Exception) {
+        recorderMessage = "Recording failed. Please try again."
+        audioRecorder?.release()
+        audioRecorder = null
+        isRecording = false
+    }
+}
+
+val microphonePermissionLauncher =
+    rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startRecording()
+        } else {
+            recorderMessage = "Microphone permission was denied."
+        }
+    }
     val audioPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -585,6 +654,50 @@ fun EditorToolPanel(
                     Text("Import Audio")
                 }
 
+                Spacer(Modifier.height(8.dp))
+
+Row(
+    horizontalArrangement = Arrangement.spacedBy(8.dp)
+) {
+    Button(
+        onClick = {
+            if (
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                startRecording()
+            } else {
+                microphonePermissionLauncher.launch(
+                    Manifest.permission.RECORD_AUDIO
+                )
+            }
+        },
+        enabled = !isRecording
+    ) {
+        Text("Start Recording")
+    }
+
+    Button(
+        onClick = {
+            stopRecording()
+        },
+        enabled = isRecording
+    ) {
+        Text("Stop Recording")
+    }
+}
+
+if (recorderMessage.isNotBlank()) {
+    Text(
+        recorderMessage,
+        color = LightPurple,
+        fontSize = 12.sp
+    )
+}
+
+Spacer(Modifier.height(8.dp))
                 if (audioUri != null) {
                     Text(
                         "Audio selected successfully",
@@ -637,14 +750,9 @@ fun EditorToolPanel(
                             Text("Remove")
                         }
                     }
-                }
-
-                Text(
-                    "Voice recording and advanced audio editing will be connected to this workspace in the next development stage.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
-            }
+            
+               }
+          }
 
             "Subtitles" -> {
                 Text(
