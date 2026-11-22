@@ -340,29 +340,19 @@ Box(
                 )
             },
             onAudioSelected = {
-    audioUri = it
-},
-onMouthAmplitude = { amplitude ->
-    mouthFrame = NikiLipSyncEngine.evaluate(
-        amplitude = amplitude,
-        previousOpenness = mouthFrame.openness,
-        sensitivity = 0.10f,
-        smoothing = 0.55f
-    )
+                audioUri = it
+            },
+            onMouthAmplitude = { amplitude ->
+                mouthFrame = NikiLipSyncEngine.evaluate(
+                    amplitude = amplitude,
+                    previousOpenness = mouthFrame.openness,
+                    sensitivity = 0.10f,
+                    smoothing = 0.55f
+                )
+            }
+        )
+    }
 }
-    )
-}     
-},
-onMouthAmplitude = { amplitude ->
-    mouthFrame = NikiLipSyncEngine.evaluate(
-        amplitude = amplitude,
-        previousOpenness = mouthFrame.openness,
-        sensitivity = 0.10f,
-        smoothing = 0.55f
-    )
-}
-    
-} 
     
 @Composable
 fun MediaPreview(
@@ -508,9 +498,11 @@ fun EditorToolPanel(
     selectedTool: String,
     subtitleText: String,
     onSubtitleChange: (String) -> Unit,
-    onImportMedia: () -> Unit,
-    onAudioSelected: (Uri) -> Unit
+    onImportMedia: () -> Unit, 
+    onAudioSelected: (Uri) -> Unit,  
+    onMouthAmplitude: (Float) -> Unit
 ) {
+
     val context = LocalContext.current
 
     var audioUri by remember { mutableStateOf<Uri?>(null) } 
