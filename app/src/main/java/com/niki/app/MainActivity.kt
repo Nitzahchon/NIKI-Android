@@ -7,6 +7,9 @@ import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.media.audiofx.Visualizer
+import android.os.Handler
+import android.os.Looper
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -509,7 +512,18 @@ fun EditorToolPanel(
     
     var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var audioPlaying by remember { mutableStateOf(false) } 
-    var audioRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var audioRecorder by remember { mutableStateOf<MediaRecorder?>(null) } 
+    var audioVisualizer by remember {
+    mutableStateOf<Visualizer?>(null)
+}
+
+var pendingAudioPlay by remember {
+    mutableStateOf(false)
+}
+
+val mainHandler = remember {
+    Handler(Looper.getMainLooper())
+}
     var isRecording by remember { mutableStateOf(false) }
     var recordingFile by remember { mutableStateOf<File?>(null) }
     var recorderMessage by remember { mutableStateOf("") }
@@ -582,7 +596,150 @@ val microphonePermissionLauncher =
         } else {
             recorderMessage = "Microphone permission was denied."
         }
+    } 
+    val visualizerPermissionLauncher =
+    rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            pendingAudioPlay = true
+        } else {
+            recorderMessage =
+                "Audio will play without mouth animation."
+            startAudioPlayback(false)
+        }
     }
+
+fun stopAudioVisualizer() {
+    try {
+        audioVisualizer?.enabled = false
+        audioVisualizer?.release()
+    } catch (_: Exception) {
+    }
+
+    audioVisualizer = null
+    onMouthAmplitude(0f)
+}
+
+fun attachAudioVisualizer(player: MediaPlayer) {
+    stopAudioVisualizer()
+
+    try {
+        val visualizer = Visualizer(player.audioSessionId)
+
+        visualizer.captureSize =
+            Visualizer.getCaptureSizeRange()[1]
+
+        visualizer.setDataCaptureListener(
+            object : Visualizer.OnDataCaptureListener {
+
+                override fun onWaveFormDataCapture(
+                    visualizer: Visualizer?,
+                    waveform: ByteArray?,
+                    samplingRate: Int
+                ) {
+                    if (waveform == null || waveform.isEmpty()) {
+                        return
+                    }
+
+                    var peak = 0
+
+                    for (sample in waveform) {
+                        val value = kotlin.math.abs(
+                            (sample.toInt() and 0xFF) - 128
+                        )
+
+                        if (value > peak) {
+                            peak = value
+                        }
+                    }
+
+                    val level = (peak / 128f)
+                        .coerceIn(0f, 1f)
+
+                    mainHandler.post {
+                        if (audioPlaying) {
+                            onMouthAmplitude(level)
+                        }
+                    }
+                }
+
+                override fun onFftDataCapture(
+                    visualizer: Visualizer?,
+                    fft: ByteArray?,
+                    samplingRate: Int
+                ) {
+                }
+            },
+            Visualizer.getMaxCaptureRate(),
+            true,
+            false
+        )
+
+        visualizer.enabled = true
+        audioVisualizer = visualizer
+
+    } catch (e: Exception) {
+        recorderMessage =
+            "Audio will play, but sound analysis could not start."
+    }
+}
+
+fun startAudioPlayback(
+    enableVisualizer: Boolean = true
+) {
+    val uri = audioUri ?: return
+
+    try {
+        val player = audioPlayer
+            ?: MediaPlayer.create(context, uri)
+            ?: run {
+                recorderMessage = "Unable to open this audio."
+                return
+            }
+
+        audioPlayer = player
+
+        player.setOnCompletionListener {
+            audioPlaying = false
+            stopAudioVisualizer()
+        }
+
+        if (player.isPlaying) {
+            player.pause()
+            audioPlaying = false
+            stopAudioVisualizer()
+        } else {
+            if (
+                player.duration > 0 &&
+                player.currentPosition >= player.duration
+            ) {
+                player.seekTo(0)
+            }
+
+            if (enableVisualizer) {
+                attachAudioVisualizer(player)
+            } else {
+                stopAudioVisualizer()
+            }
+
+            player.start()
+            audioPlaying = true
+        }
+
+    } catch (e: Exception) {
+        audioPlaying = false
+        stopAudioVisualizer()
+        recorderMessage = "Unable to play audio."
+    }
+}
+
+LaunchedEffect(pendingAudioPlay) {
+    if (pendingAudioPlay) {
+        pendingAudioPlay = false
+        startAudioPlayback()
+    }
+}
     val audioPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
