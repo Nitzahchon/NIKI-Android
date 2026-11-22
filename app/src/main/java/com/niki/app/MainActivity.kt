@@ -510,7 +510,8 @@ fun EditorToolPanel(
 
     var audioUri by remember { mutableStateOf<Uri?>(null) } 
     
-    var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) } 
+    var loadedAudioUri by remember { mutableStateOf<Uri?>(null) }
     var audioPlaying by remember { mutableStateOf(false) } 
     var audioRecorder by remember { mutableStateOf<MediaRecorder?>(null) } 
     var audioVisualizer by remember {
@@ -691,14 +692,25 @@ fun startAudioPlayback(
     val uri = audioUri ?: return
 
     try {
-        val player = audioPlayer
-            ?: MediaPlayer.create(context, uri)
-            ?: run {
-                recorderMessage = "Unable to open this audio."
-                return
-            }
+        val player = if (
+            audioPlayer == null || loadedAudioUri != uri
+        ) {
+            stopAudioVisualizer()
+            audioPlayer?.release()
+            audioPlayer = null
+            loadedAudioUri = null
+            val newPlayer = MediaPlayer.create(context, uri)
+                ?: run {
+                    recorderMessage = "Unable to open this audio."
+                    return
+                }
 
-        audioPlayer = player
+            audioPlayer = newPlayer
+            loadedAudioUri = uri
+            newPlayer
+        } else {
+            audioPlayer!!
+        }
 
         player.setOnCompletionListener {
             audioPlaying = false
@@ -733,6 +745,7 @@ fun startAudioPlayback(
         recorderMessage = "Unable to play audio."
     }
 }
+
 
 LaunchedEffect(pendingAudioPlay) {
     if (pendingAudioPlay) {
