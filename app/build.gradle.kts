@@ -27,8 +27,8 @@ android {
 }
 
 dependencies {
-implementation("com.google.mlkit:face-detection:16.1.7")
-    implementation(platform("androidx.compose:compose-bom:2024.10.00"))
+ implementation("com.google.mlkit:face-detection:16.1.7")
+ implementation(platform("androidx.compose:compose-bom:2024.10.00"))
 
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.ui:ui")
