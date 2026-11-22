@@ -769,11 +769,13 @@ LaunchedEffect(pendingAudioPlay) {
     }
 
     DisposableEffect(Unit) {
-        onDispose {
-            audioPlayer?.release()
-            audioPlayer = null
-        }
+    onDispose {
+        stopAudioVisualizer()
+
+        audioPlayer?.release()
+        audioPlayer = null
     }
+}
 
     Column(
         modifier = Modifier
