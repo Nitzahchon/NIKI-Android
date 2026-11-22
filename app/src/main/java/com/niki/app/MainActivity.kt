@@ -875,36 +875,28 @@ Spacer(Modifier.height(8.dp))
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = {
-                                try {
-                                    if (audioPlaying) {
-                                        audioPlayer?.pause()
-                                        audioPlaying = false
-                                    } else {
-                                        if (audioPlayer == null) {
-                                            audioPlayer =
-                                                MediaPlayer.create(
-                                                    context,
-                                                    audioUri
-                                                )
-                                        }
-
-                                        audioPlayer?.setOnCompletionListener {
-                                            audioPlaying = false
-                                        }
-
-                                        audioPlayer?.start()
-                                        audioPlaying = true
-                                    }
-                                } catch (e: Exception) {
-                                    audioPlaying = false
-                                }
-                            }
-                        ) {
-                            Text(
-                                if (audioPlaying) "Pause" else "Play Audio"
-                            )
-                        }
+    onClick = {
+        if (audioPlaying) {
+            startAudioPlayback()
+        } else if (
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            startAudioPlayback()
+        } else {
+            visualizerPermissionLauncher.launch(
+                Manifest.permission.RECORD_AUDIO
+            )
+        }
+    }
+) {
+    Text(
+        if (audioPlaying) "Pause"
+        else "Play Audio + Mouth"
+    )
+}
 
                         OutlinedButton(
                             onClick = {
