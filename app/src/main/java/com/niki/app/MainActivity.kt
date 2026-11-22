@@ -340,10 +340,28 @@ Box(
                 )
             },
             onAudioSelected = {
-                audioUri = it
-            }
-        )
-    } 
+    audioUri = it
+},
+onMouthAmplitude = { amplitude ->
+    mouthFrame = NikiLipSyncEngine.evaluate(
+        amplitude = amplitude,
+        previousOpenness = mouthFrame.openness,
+        sensitivity = 0.10f,
+        smoothing = 0.55f
+    )
+}
+    )
+}     
+},
+onMouthAmplitude = { amplitude ->
+    mouthFrame = NikiLipSyncEngine.evaluate(
+        amplitude = amplitude,
+        previousOpenness = mouthFrame.openness,
+        sensitivity = 0.10f,
+        smoothing = 0.55f
+    )
+}
+    
 } 
     
 @Composable
