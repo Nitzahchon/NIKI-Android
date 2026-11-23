@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
@@ -113,6 +115,40 @@ var mouthPosition by remember {
 
         if (selectedMedia == null && newItems.isNotEmpty()) {
             selectedMedia = newItems.first()
+        }
+    }
+
+    LaunchedEffect(selectedMedia?.uri, selectedMedia?.type) {
+        val media = selectedMedia
+        if (media?.type == "Image") {
+            mouthPosition = NikiMouthPosition()
+            try {
+                val bitmap = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(media.uri)?.use {
+                        BitmapFactory.decodeStream(it)
+                    }
+                }
+                if (bitmap != null) {
+                    val rig = NikiPhotoAutoRig.createRig(bitmap)
+                    val person = rig.people.firstOrNull()
+                    val left = person?.landmarks?.get("mouth_left")
+                    val right = person?.landmarks?.get("mouth_right")
+                    val bottom = person?.landmarks?.get("mouth_bottom")
+                    if (left != null && right != null) {
+                        mouthPosition = NikiMouthPosition(
+                            x = (left.x + right.x) / 2f,
+                            y = if (bottom != null)
+                                (left.y + right.y + bottom.y) / 3f
+                            else (left.y + right.y) / 2f,
+                            width = kotlin.math.abs(right.x - left.x) * 1.25f
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                // Keep the adjustable default mouth position if face landmarks fail.
+            }
+        } else {
+            mouthFrame = NikiLipSyncEngine.closedMouth()
         }
     }
 
@@ -333,6 +369,7 @@ Box(
 
         EditorToolPanel(
             selectedTool = selectedTool,
+            hasPhoto = selectedMedia?.type == "Image",
             subtitleText = subtitleText,
             onSubtitleChange = {
                 subtitleText = it
@@ -365,6 +402,15 @@ fun MediaPreview(
     mouthPosition: NikiMouthPosition
 ){ 
     val context = LocalContext.current
+    val bitmap = remember(media.uri) {
+        try {
+            context.contentResolver.openInputStream(media.uri)?.use {
+                BitmapFactory.decodeStream(it)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -376,16 +422,6 @@ fun MediaPreview(
         when (media.type) {
 
             "Image" -> {
-                val bitmap = remember(media.uri) {
-                    try {
-                        context.contentResolver
-                            .openInputStream(media.uri)
-                            ?.use { BitmapFactory.decodeStream(it) }
-                    } catch (e: Exception) {
-                        null
-                    }
-                }
-
                 if (bitmap != null) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
@@ -421,7 +457,7 @@ fun MediaPreview(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "♫",
+                        "鈾�",
                         color = LightPurple,
                         fontSize = 55.sp
                     )
@@ -454,24 +490,37 @@ fun MediaPreview(
                 modifier = Modifier.fillMaxSize()
             ) {
                 val position = mouthPosition.normalized()
-
-                val mouthWidth = size.width * 0.09f
-
-                val mouthHeight = (
-                    size.height * 0.025f *
-                    mouthOpenness.coerceIn(0f, 1f)
-                ).coerceAtLeast(3f)
-
+                val imageAspect = if (bitmap != null)
+                    bitmap.width.toFloat() / bitmap.height.toFloat() else 1f
+                val canvasAspect = size.width / size.height
+                val drawWidth: Float
+                val drawHeight: Float
+                val offsetX: Float
+                val offsetY: Float
+                if (imageAspect > canvasAspect) {
+                    drawWidth = size.width
+                    drawHeight = size.width / imageAspect
+                    offsetX = 0f
+                    offsetY = (size.height - drawHeight) / 2f
+                } else {
+                    drawHeight = size.height
+                    drawWidth = size.height * imageAspect
+                    offsetX = (size.width - drawWidth) / 2f
+                    offsetY = 0f
+                }
+                val mouthWidth = drawWidth * position.width
+                val openness = mouthOpenness.coerceIn(0f, 1f)
+                val mouthHeight = (mouthWidth * (0.10f + openness * 0.65f))
+                    .coerceAtLeast(2.5f)
+                val centerX = offsetX + drawWidth * position.x
+                val centerY = offsetY + drawHeight * position.y
                 drawOval(
                     color = Color(0xFF241018),
                     topLeft = androidx.compose.ui.geometry.Offset(
-                        size.width * position.x - mouthWidth / 2,
-                        size.height * position.y - mouthHeight / 2
+                        centerX - mouthWidth / 2f,
+                        centerY - mouthHeight / 2f
                     ),
-                    size = androidx.compose.ui.geometry.Size(
-                        mouthWidth,
-                        mouthHeight
-                    )
+                    size = androidx.compose.ui.geometry.Size(mouthWidth, mouthHeight)
                 )
             }
         }
@@ -499,6 +548,7 @@ fun MediaPreview(
 @Composable
 fun EditorToolPanel(
     selectedTool: String,
+    hasPhoto: Boolean,
     subtitleText: String,
     onSubtitleChange: (String) -> Unit,
     onImportMedia: () -> Unit, 
@@ -529,7 +579,6 @@ val mainHandler = remember {
     var recordingFile by remember { mutableStateOf<File?>(null) }
     var recorderMessage by remember { mutableStateOf("") }
 
-    var mouthMoving by remember { mutableStateOf(false) }
     var bodyMoving by remember { mutableStateOf(false) }
     var effectStrength by remember { mutableFloatStateOf(0.5f) }
     fun startRecording() {
@@ -610,10 +659,10 @@ fun stopAudioVisualizer() {
     onMouthAmplitude(0f)
 }
 
-fun attachAudioVisualizer(player: MediaPlayer) {
+fun attachAudioVisualizer(player: MediaPlayer): Boolean {
     stopAudioVisualizer()
 
-    try {
+    return try {
         val visualizer = Visualizer(player.audioSessionId)
 
         visualizer.captureSize =
@@ -631,20 +680,13 @@ fun attachAudioVisualizer(player: MediaPlayer) {
                         return
                     }
 
-                    var peak = 0
-
+                    var sum = 0.0
                     for (sample in waveform) {
-                        val value = kotlin.math.abs(
-                            (sample.toInt() and 0xFF) - 128
-                        )
-
-                        if (value > peak) {
-                            peak = value
-                        }
+                        val value = (sample.toInt() and 0xFF) - 128
+                        sum += value * value
                     }
-
-                    val level = (peak / 128f)
-                        .coerceIn(0f, 1f)
+                    val rms = kotlin.math.sqrt(sum / waveform.size)
+                    val level = (rms / 52.0).toFloat().coerceIn(0f, 1f)
 
                     mainHandler.post {
                         if (audioPlaying) {
@@ -667,10 +709,10 @@ fun attachAudioVisualizer(player: MediaPlayer) {
 
         visualizer.enabled = true
         audioVisualizer = visualizer
-
+        true
     } catch (e: Exception) {
-        recorderMessage =
-            "Audio will play, but sound analysis could not start."
+        recorderMessage = "Mouth analysis could not start: ${e.message ?: "audio visualizer unavailable"}"
+        false
     }
 }
 
@@ -718,7 +760,11 @@ fun startAudioPlayback(
             }
 
             if (enableVisualizer) {
-                attachAudioVisualizer(player)
+                if (!attachAudioVisualizer(player)) {
+                    audioPlaying = false
+                    onMouthAmplitude(0f)
+                    return
+                }
             } else {
                 stopAudioVisualizer()
             }
@@ -745,6 +791,25 @@ val visualizerPermissionLauncher =
             startAudioPlayback(false)
         }
     }
+
+fun playTalkingPhoto() {
+    if (!hasPhoto) {
+        recorderMessage = "Import and select a photograph in Media first."
+        return
+    }
+    if (audioUri == null) {
+        recorderMessage = "Record or import your voice in Audio first."
+        return
+    }
+    if (ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    ) {
+        startAudioPlayback()
+    } else {
+        visualizerPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+}
 
 LaunchedEffect(pendingAudioPlay) {
     if (pendingAudioPlay) {
@@ -993,49 +1058,36 @@ Spacer(Modifier.height(8.dp))
 
             "Lip Sync" -> {
                 Text(
-                    "NIKI LIP SYNC",
+                    "NIKI SPEAKING STUDIO",
                     color = LightPurple,
                     fontWeight = FontWeight.Bold
                 )
-
                 Spacer(Modifier.height(8.dp))
-
                 Text(
-                    "Create a talking-photo animation prototype.",
+                    "Select a photo, record or import a voice, then play it to animate the detected mouth.",
                     color = Color.White
                 )
-
+                Spacer(Modifier.height(8.dp))
                 Button(
-                    onClick = {
-                        mouthMoving = !mouthMoving
-                    },
+                    onClick = { playTalkingPhoto() },
+                    enabled = hasPhoto && audioUri != null,
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    Text(if (audioPlaying) "Pause Talking Photo" else "Play Voice + Animate Photo")
+                }
+                if (recorderMessage.isNotBlank()) {
+                    Text(recorderMessage, color = LightPurple, fontSize = 12.sp)
+                } else {
                     Text(
-                        if (mouthMoving)
-                            "Stop Mouth Animation"
-                        else
-                            "Test Mouth Animation"
+                        when {
+                            !hasPhoto -> "Step 1: Import and select a photo in Media."
+                            audioUri == null -> "Step 2: Record or import your voice in Audio."
+                            else -> "Ready. Play your voice to see the detected mouth respond."
+                        },
+                        color = Color.LightGray,
+                        fontSize = 12.sp
                     )
                 }
-
-                val mouthSize by animateFloatAsState(
-                    targetValue = if (mouthMoving) 1.5f else 1f,
-                    label = "mouth"
-                )
-
-                Text(
-                    "●",
-                    color = LightPurple,
-                    fontSize = (30 * mouthSize).sp,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
-
-                Text(
-                    "This is an animation test, not yet real photo lip synchronization.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
             }
             "Body Motion" -> {
                 NikiBodyMotionPanel()
