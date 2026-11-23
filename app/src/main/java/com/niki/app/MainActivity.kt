@@ -598,19 +598,7 @@ val microphonePermissionLauncher =
             recorderMessage = "Microphone permission was denied."
         }
     } 
-    val visualizerPermissionLauncher =
-    rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            pendingAudioPlay = true
-        } else {
-            recorderMessage =
-                "Audio will play without mouth animation."
-            startAudioPlayback(false)
-        }
-    }
-
+    
 fun stopAudioVisualizer() {
     try {
         audioVisualizer?.enabled = false
@@ -745,7 +733,18 @@ fun startAudioPlayback(
         recorderMessage = "Unable to play audio."
     }
 }
-
+val visualizerPermissionLauncher =
+    rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            pendingAudioPlay = true
+        } else {
+            recorderMessage =
+                "Audio will play without mouth animation."
+            startAudioPlayback(false)
+        }
+    }
 
 LaunchedEffect(pendingAudioPlay) {
     if (pendingAudioPlay) {
