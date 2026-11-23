@@ -1,44 +1,48 @@
 package com.niki.app
 
 import android.Manifest
-import android.app.Activity
-import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.media.audiofx.Visualizer
-import android.os.Handler
-import android.os.Looper
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.speech.RecognizerIntent
+import android.os.SystemClock
 import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.*
-import androidx.compose.ui.graphics.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.*
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.sqrt
 
 private val Navy = Color(0xFF101A35)
 private val Purple = Color(0xFF7952D6)
@@ -48,16 +52,11 @@ private val Background = Color(0xFF080D1B)
 data class EditorMedia(
     val uri: Uri,
     val name: String,
-    val type: String
-)
-
-data class SubtitleClip(
-    val text: String,
-    val start: Long = 0L,
-    val duration: Long = 3000L
+    val type: String,
 )
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -72,283 +71,864 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NikiApp() {
     EditorScreen()
-} 
+}
+
 @Composable
 fun EditorScreen() {
+
     val context = LocalContext.current
 
-    var mediaList by remember { mutableStateOf(listOf<EditorMedia>()) }
-    var selectedMedia by remember { mutableStateOf<EditorMedia?>(null) }
-    var selectedTool by remember { mutableStateOf("Media") }
-    var subtitleText by remember { mutableStateOf("") }
-    var isPlaying by remember { mutableStateOf(false) }
-    var audioUri by remember { mutableStateOf<Uri?>(null) }
-    
-var mouthFrame by remember {
-    mutableStateOf(NikiLipSyncEngine.closedMouth())
-}
+    var mediaList by remember {
+        mutableStateOf(emptyList<EditorMedia>())
+    }
 
-var mouthPosition by remember {
-    mutableStateOf(NikiMouthPosition())
-}
-    val mediaPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        val newItems = uris.map { uri ->
-            val mime = context.contentResolver.getType(uri) ?: ""
+    var selectedMedia by remember {
+        mutableStateOf<EditorMedia?>(null)
+    }
 
-            val type = when {
-                mime.startsWith("image/") -> "Image"
-                mime.startsWith("video/") -> "Video"
-                mime.startsWith("audio/") -> "Audio"
-                else -> "Media"
+    var audioUri by remember {
+        mutableStateOf<Uri?>(null)
+    }
+
+    var isPlaying by remember {
+        mutableStateOf(false)
+    }
+
+    var audioPlayer by remember {
+        mutableStateOf<MediaPlayer?>(null)
+    }
+
+    var videoView by remember {
+        mutableStateOf<VideoView?>(null)
+    }
+
+    var mouthOpenness by remember {
+        mutableFloatStateOf(0f)
+    }
+
+    var mouthPosition by remember {
+        mutableStateOf(NikiMouthPosition())
+    }
+
+    var selectedPersonIndex by remember {
+        mutableIntStateOf(0)
+    }
+
+    var detectedPeopleCount by remember {
+        mutableIntStateOf(0)
+    }
+
+    var recorder by remember {
+        mutableStateOf<MediaRecorder?>(null)
+    }
+
+    var isRecording by remember {
+        mutableStateOf(false)
+    }
+
+    var recordingMessage by remember {
+        mutableStateOf("")
+    }
+
+    var visualizer by remember {
+        mutableStateOf<Visualizer?>(null)
+    }
+
+    var selectedTool by remember {
+        mutableStateOf("Media")
+    }
+
+    var selectedMotion by remember {
+        mutableStateOf("idle")
+    }
+
+    var motionIntensity by remember {
+        mutableFloatStateOf(1f)
+    }
+
+    var motionSpeed by remember {
+        mutableFloatStateOf(1f)
+    }
+
+    var motionElapsed by remember {
+        mutableLongStateOf(0L)
+    }
+
+    var motionPose by remember {
+        mutableStateOf<NikiRigPose?>(null)
+    }
+
+    var motionStartedAt by remember {
+        mutableLongStateOf(0L)
+    }
+
+    var effectStrength by remember {
+        mutableFloatStateOf(0.5f)
+    }
+
+    var imageBitmap by remember {
+        mutableStateOf<Bitmap?>(null)
+    }
+
+    var photoRig by remember {
+        mutableStateOf<NikiPhotoRig?>(null)
+    }
+
+    /*
+     * Build a lightweight graph using the bone IDs
+     * already defined in NikiMotionLibrary.
+     *
+     * This graph supplies motion data to the adapter.
+     * It is not a full photographic character rig.
+     */
+    val motionGraph = remember {
+
+        val boneIds = NikiMotionLibrary.presets
+            .flatMap { preset ->
+                preset.channels.map { it.boneId }
             }
+            .distinct()
 
-            EditorMedia(
-                uri = uri,
-                name = "Project ${mediaList.size + 1}",
-                type = type
+        val bones = boneIds.associateWith { id ->
+
+            NikiRigBone(
+                id = id,
+                parentId = null,
+                x = 0f,
+                y = 0f,
+                length = 1f,
+                restRotationDegrees = 0f,
             )
         }
 
-        mediaList = mediaList + newItems
-
-        if (selectedMedia == null && newItems.isNotEmpty()) {
-            selectedMedia = newItems.first()
-        }
+        NikiRigGraph(
+            rootBoneIds = boneIds,
+            bones = bones,
+        )
     }
 
-    LaunchedEffect(selectedMedia?.uri, selectedMedia?.type) {
-        val media = selectedMedia
-        if (media?.type == "Image") {
-            mouthPosition = NikiMouthPosition()
-            try {
-                val bitmap = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(media.uri)?.use {
-                        BitmapFactory.decodeStream(it)
-                    }
+    /*
+     * Media picker.
+     */
+    val mediaPicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenMultipleDocuments()
+        ) { uris ->
+
+            val imported = uris.mapIndexed { index, uri ->
+
+                val mime = context.contentResolver
+                    .getType(uri) ?: ""
+
+                val type = when {
+                    mime.startsWith("image/") -> "Image"
+                    mime.startsWith("video/") -> "Video"
+                    mime.startsWith("audio/") -> "Audio"
+                    else -> "Media"
                 }
-                if (bitmap != null) {
-                    val rig = NikiPhotoAutoRig.createRig(bitmap)
+
+                EditorMedia(
+                    uri = uri,
+                    name = "Media ${mediaList.size + index + 1}",
+                    type = type,
+                )
+            }
+
+            mediaList = mediaList + imported
+
+            imported.firstOrNull()?.let { item ->
+
+                if (item.type == "Audio") {
+                    audioUri = item.uri
+                } else {
+                    selectedMedia = item
+                }
+            }
+        }
+
+    /*
+     * Audio picker.
+     */
+    val audioPicker =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri ->
+
+            if (uri != null) {
+                audioUri = uri
+                recordingMessage = "Audio imported successfully."
+            }
+        }
+
+    /*
+     * Recording permission.
+     */
+    val microphonePermission =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            if (granted) {
+                startNikiRecording(
+                    context = context,
+                    onRecorderReady = {
+                        recorder = it
+                        isRecording = true
+                        recordingMessage = "Recording in progress..."
+                    },
+                    onError = {
+                        recordingMessage = it
+                    },
+                )
+            } else {
+                recordingMessage = "Microphone permission denied."
+            }
+        }
+
+    /*
+     * Audio visualizer permission.
+     */
+    val visualizerPermission =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            if (granted) {
+                recordingMessage = "Audio analysis permission granted."
+            } else {
+                recordingMessage =
+                    "Audio can play, but mouth analysis may be unavailable."
+            }
+        }
+
+    /*
+     * Load selected image and detect people.
+     */
+    LaunchedEffect(selectedMedia?.uri) {
+
+        val media = selectedMedia
+
+        imageBitmap = null
+        photoRig = null
+        detectedPeopleCount = 0
+        selectedPersonIndex = 0
+        mouthPosition = NikiMouthPosition()
+        mouthOpenness = 0f
+
+        if (media?.type == "Image") {
+
+            val bitmap = withContext(Dispatchers.IO) {
+
+                try {
+                    context.contentResolver
+                        .openInputStream(media.uri)
+                        ?.use {
+                            BitmapFactory.decodeStream(it)
+                        }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+            imageBitmap = bitmap
+
+            if (bitmap != null) {
+
+                try {
+
+                    val rig = withContext(Dispatchers.Default) {
+                        NikiPhotoAutoRig.createRig(bitmap)
+                    }
+
+                    photoRig = rig
+                    detectedPeopleCount = rig.people.size
+
                     val person = rig.people.firstOrNull()
+
                     val left = person?.landmarks?.get("mouth_left")
                     val right = person?.landmarks?.get("mouth_right")
                     val bottom = person?.landmarks?.get("mouth_bottom")
+
                     if (left != null && right != null) {
+
                         mouthPosition = NikiMouthPosition(
                             x = (left.x + right.x) / 2f,
-                            y = if (bottom != null)
+                            y = if (bottom != null) {
                                 (left.y + right.y + bottom.y) / 3f
-                            else (left.y + right.y) / 2f,
-                            width = kotlin.math.abs(right.x - left.x) * 1.25f
+                            } else {
+                                (left.y + right.y) / 2f
+                            },
+                            width = abs(right.x - left.x) * 1.25f,
                         )
                     }
+
+                } catch (_: Exception) {
+                    recordingMessage =
+                        "Automatic face detection was unsuccessful."
                 }
-            } catch (_: Exception) {
-                // Keep the adjustable default mouth position if face landmarks fail.
             }
-        } else {
-            mouthFrame = NikiLipSyncEngine.closedMouth()
         }
     }
 
+    /*
+     * Update the mouth position when the selected speaker changes.
+     */
+    LaunchedEffect(selectedPersonIndex, photoRig) {
+
+        val person = photoRig
+            ?.people
+            ?.getOrNull(selectedPersonIndex)
+
+        val left = person?.landmarks?.get("mouth_left")
+        val right = person?.landmarks?.get("mouth_right")
+        val bottom = person?.landmarks?.get("mouth_bottom")
+
+        if (left != null && right != null) {
+
+            mouthPosition = NikiMouthPosition(
+                x = (left.x + right.x) / 2f,
+                y = if (bottom != null) {
+                    (left.y + right.y + bottom.y) / 3f
+                } else {
+                    (left.y + right.y) / 2f
+                },
+                width = abs(right.x - left.x) * 1.25f,
+            )
+        }
+
+        mouthOpenness = 0f
+    }
+
+    /*
+     * Evaluate the selected motion preset while Preview is playing.
+     */
+    LaunchedEffect(isPlaying, selectedMotion) {
+
+        if (isPlaying) {
+
+            motionStartedAt = SystemClock.elapsedRealtime()
+
+            while (isPlaying) {
+
+                motionElapsed =
+                    SystemClock.elapsedRealtime() - motionStartedAt
+
+                motionPose = NikiRigMotionAdapter.evaluate(
+                    graph = motionGraph,
+                    presetId = selectedMotion,
+                    elapsedMs = motionElapsed,
+                    speed = motionSpeed,
+                    intensity = motionIntensity,
+                )
+
+                delay(33L)
+            }
+
+        } else {
+
+            motionPose = NikiRigMotionAdapter.apply(
+                graph = NikiRigMotionAdapter.reset(motionGraph),
+                frame = NikiMotionEngine.evaluate(
+                    preset = NikiMotionLibrary.find(selectedMotion)
+                        ?: NikiMotionLibrary.presets.first(),
+                    elapsedMs = 0L,
+                ),
+            )
+        }
+    }
+
+    /*
+     * Stop and release resources when the screen is destroyed.
+     */
+    DisposableEffect(Unit) {
+
+        onDispose {
+
+            try {
+                visualizer?.enabled = false
+                visualizer?.release()
+            } catch (_: Exception) {
+            }
+
+            audioPlayer?.release()
+            videoView?.stopPlayback()
+
+            try {
+                recorder?.release()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /*
+     * Playback functions.
+     */
+    fun stopPlayback() {
+
+        isPlaying = false
+        mouthOpenness = 0f
+
+        try {
+            audioPlayer?.pause()
+            audioPlayer?.seekTo(0)
+        } catch (_: Exception) {
+        }
+
+        try {
+            videoView?.pause()
+            videoView?.seekTo(0)
+        } catch (_: Exception) {
+        }
+
+        try {
+            visualizer?.enabled = false
+        } catch (_: Exception) {
+        }
+    }
+
+    fun pausePlayback() {
+
+        isPlaying = false
+
+        try {
+            audioPlayer?.pause()
+        } catch (_: Exception) {
+        }
+
+        try {
+            videoView?.pause()
+        } catch (_: Exception) {
+        }
+
+        try {
+            visualizer?.enabled = false
+        } catch (_: Exception) {
+        }
+
+        mouthOpenness = 0f
+    }
+
+    fun playPlayback() {
+
+        val media = selectedMedia
+
+        if (media == null && audioUri == null) {
+            recordingMessage = "Import media or audio first."
+            return
+        }
+
+        try {
+
+            if (media?.type == "Video") {
+                videoView?.start()
+            }
+
+            if (audioUri != null) {
+
+                if (audioPlayer == null) {
+
+                    audioPlayer = MediaPlayer.create(
+                        context,
+                        audioUri,
+                    )
+                }
+
+                audioPlayer?.setOnCompletionListener {
+                    isPlaying = false
+                    mouthOpenness = 0f
+                }
+
+                audioPlayer?.start()
+            }
+
+            isPlaying = true
+
+        } catch (e: Exception) {
+
+            recordingMessage =
+                "Unable to start preview: ${e.message}"
+        }
+    }
+
+    /*
+     * Remove picture without removing audio.
+     */
+    fun removePicture() {
+
+        pausePlayback()
+
+        selectedMedia = null
+        imageBitmap = null
+        photoRig = null
+        detectedPeopleCount = 0
+        selectedPersonIndex = 0
+
+        mouthPosition = NikiMouthPosition()
+        mouthOpenness = 0f
+        motionPose = null
+
+        videoView?.stopPlayback()
+        videoView = null
+    }
+
+    /*
+     * Remove audio without removing picture.
+     */
+    fun removeAudio() {
+
+        pausePlayback()
+
+        try {
+            visualizer?.enabled = false
+            visualizer?.release()
+        } catch (_: Exception) {
+        }
+
+        visualizer = null
+
+        audioPlayer?.release()
+        audioPlayer = null
+
+        audioUri = null
+        mouthOpenness = 0f
+
+        recordingMessage = "Audio removed."
+    }
+
+    /*
+     * User interface.
+     */
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Background)
-            .padding(12.dp)
+            .padding(12.dp),
     ) {
-
-        // HEADER
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+
             Column {
+
                 Text(
                     "NIKI",
                     color = Color.White,
                     fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
                 )
 
                 Text(
                     "Your Voice. Your Story. Your Victory.",
                     color = LightPurple,
-                    fontSize = 10.sp
+                    fontSize = 10.sp,
                 )
             }
 
-            Button(
-                onClick = {
-                    // Export functionality will be connected later.
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Purple
-                )
-            ) {
-                Text("Export")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // VIDEO PREVIEW
-
-Box(
-    modifier = Modifier
-        .fillMaxWidth()
-        .weight(1f)
-        .background(Navy, RoundedCornerShape(16.dp)),
-    contentAlignment = Alignment.Center
-) {
-    if (selectedMedia == null) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
             Text(
-                "NIKI STUDIO",
+                "STUDIO",
                 color = LightPurple,
-                fontSize = 23.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Text(
-                "Import photos, videos or audio",
-                color = Color.White
+                fontWeight = FontWeight.Bold,
             )
         }
-    } else {
-        MediaPreview(
-            media = selectedMedia!!,
-            subtitle = subtitleText,
-            mouthOpenness = mouthFrame.openness,
-            mouthPosition = mouthPosition
-        )
-    }
-}
-        Spacer(modifier = Modifier.height(10.dp))
 
+        Spacer(Modifier.height(12.dp))
 
-        // PLAYBACK CONTROLS
+        /*
+         * PREVIEW
+         */
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.Black),
+            contentAlignment = Alignment.Center,
+        ) {
 
+            when (selectedMedia?.type) {
+
+                "Image" -> {
+
+                    val bitmap = imageBitmap
+
+                    if (bitmap != null) {
+
+                        val headRotation =
+                            motionPose
+                                ?.graph
+                                ?.bones
+                                ?.get("head")
+                                ?.rotationDegrees ?: 0f
+
+                        val torsoRotation =
+                            motionPose
+                                ?.graph
+                                ?.bones
+                                ?.get("torso")
+                                ?.rotationDegrees ?: 0f
+
+                        val rootMovement =
+                            motionPose?.rootYOffset ?: 0f
+
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "NIKI photo preview",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+
+                                    rotationZ =
+                                        (headRotation * 0.25f +
+                                            torsoRotation * 0.35f)
+                                            .coerceIn(-12f, 12f)
+
+                                    translationY =
+                                        rootMovement * size.height
+                                },
+                        )
+
+                        /*
+                         * Mouth overlay is drawn only for the selected person.
+                         * Other detected people are not animated.
+                         */
+                        Canvas(
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+
+                            val position = mouthPosition
+
+                            val centerX =
+                                size.width * position.x
+
+                            val centerY =
+                                size.height * position.y
+
+                            val mouthWidth =
+                                size.width * position.width
+                                    .coerceIn(0.005f, 0.3f)
+
+                            val openness =
+                                mouthOpenness.coerceIn(0f, 1f)
+
+                            val mouthHeight =
+                                (mouthWidth *
+                                    (0.08f + openness * 0.55f))
+                                    .coerceAtLeast(2f)
+
+                            drawOval(
+                                color = Color(0xFF301019),
+                                topLeft = androidx.compose.ui.geometry.Offset(
+                                    centerX - mouthWidth / 2f,
+                                    centerY - mouthHeight / 2f,
+                                ),
+                                size = androidx.compose.ui.geometry.Size(
+                                    mouthWidth,
+                                    mouthHeight,
+                                ),
+                            )
+                        }
+
+                    } else {
+
+                        Text(
+                            "Loading photograph...",
+                            color = Color.White,
+                        )
+                    }
+                }
+
+                "Video" -> {
+
+                    key(selectedMedia?.uri) {
+
+                        AndroidView(
+                            factory = { ctx ->
+
+                                VideoView(ctx).apply {
+
+                                    setVideoURI(selectedMedia!!.uri)
+
+                                    setOnPreparedListener { player ->
+                                        player.isLooping = true
+                                        // Do not autoplay.
+                                    }
+
+                                    videoView = this
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+
+                "Audio" -> {
+
+                    Text(
+                        "AUDIO SELECTED",
+                        color = LightPurple,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                else -> {
+
+                    Text(
+                        "Import a photo, video or audio file",
+                        color = Color.White,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        /*
+         * PLAYBACK BUTTONS
+         */
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
         ) {
+
             Button(
                 onClick = {
-                    isPlaying = !isPlaying
+                    if (isPlaying) pausePlayback()
+                    else playPlayback()
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Purple
-                )
+                    containerColor = Purple,
+                ),
             ) {
                 Text(if (isPlaying) "Pause" else "Play")
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(Modifier.width(8.dp))
 
-            Text(
-                "Preview",
-                color = Color.White
-            )
+            OutlinedButton(
+                onClick = { stopPlayback() },
+            ) {
+                Text("Stop")
+            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
 
-        // TIMELINE
+        /*
+         * MEDIA CONTROLS
+         */
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
 
+            Button(
+                onClick = {
+                    mediaPicker.launch(
+                        arrayOf("image/*", "video/*", "audio/*")
+                    )
+                },
+            ) {
+                Text("Import Media")
+            }
+
+            OutlinedButton(
+                onClick = { removePicture() },
+                enabled = selectedMedia?.type == "Image" ||
+                    selectedMedia?.type == "Video",
+            ) {
+                Text("Remove Picture")
+            }
+
+            OutlinedButton(
+                onClick = { removeAudio() },
+                enabled = audioUri != null,
+            ) {
+                Text("Remove Audio")
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        /*
+         * TIMELINE
+         */
         Text(
             "PROJECT TIMELINE",
             color = LightPurple,
             fontWeight = FontWeight.Bold,
-            fontSize = 13.sp
         )
-
-        Spacer(modifier = Modifier.height(6.dp))
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(65.dp)
                 .horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (mediaList.isEmpty()) {
-                Text(
-                    "Your imported clips will appear here",
-                    color = Color.Gray
-                )
-            }
 
             mediaList.forEach { item ->
+
                 Card(
                     modifier = Modifier
-                        .padding(end = 8.dp)
-                        .width(105.dp)
-                        .fillMaxHeight()
+                        .padding(4.dp)
+                        .width(100.dp)
                         .clickable {
-                            selectedMedia = item
+
+                            if (item.type == "Audio") {
+                                audioUri = item.uri
+                            } else {
+                                pausePlayback()
+                                selectedMedia = item
+                            }
                         },
                     colors = CardDefaults.cardColors(
                         containerColor =
-                            if (selectedMedia == item)
-                                Purple
-                            else Navy
-                    )
+                            if (selectedMedia == item) Purple
+                            else Navy,
+                    ),
                 ) {
+
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.Center
+                        modifier = Modifier.padding(8.dp),
                     ) {
+
                         Text(
                             item.type,
                             color = Color.White,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
                         )
 
                         Text(
                             item.name,
-                            color = Color.White,
-                            fontSize = 10.sp
+                            color = LightPurple,
+                            fontSize = 10.sp,
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // EDITING TOOLS
-
-        Text(
-            "EDITING TOOLS",
-            color = LightPurple,
-            fontWeight = FontWeight.Bold,
-            fontSize = 13.sp
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
+        /*
+         * TOOL SELECTOR
+         */
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(7.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+
             listOf(
                 "Media",
                 "Audio",
-                "Subtitles",
                 "Lip Sync",
                 "Body Motion",
-                "Effects"
+                "Effects",
             ).forEach { tool ->
 
                 FilterChip(
@@ -358,774 +938,383 @@ Box(
                     },
                     label = {
                         Text(tool)
-                    }
+                    },
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // SELECTED TOOL WORKSPACE
-
-        EditorToolPanel(
-            selectedTool = selectedTool,
-            hasPhoto = selectedMedia?.type == "Image",
-            subtitleText = subtitleText,
-            onSubtitleChange = {
-                subtitleText = it
-            },
-            onImportMedia = {
-                mediaPicker.launch(
-                    arrayOf("image/*", "video/*", "audio/*")
+        /*
+         * TOOL WORKSPACE
+         */
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 250.dp)
+                .background(
+                    Navy,
+                    RoundedCornerShape(14.dp),
                 )
-            },
-            onAudioSelected = {
-                audioUri = it
-            },
-            onMouthAmplitude = { amplitude ->
-                mouthFrame = NikiLipSyncEngine.evaluate(
-                    amplitude = amplitude,
-                    previousOpenness = mouthFrame.openness,
-                    sensitivity = 0.10f,
-                    smoothing = 0.55f
-                )
-            }
-        )
-    }
-}
-    
-@Composable
-fun MediaPreview(
-    media: EditorMedia,
-    subtitle: String,
-    mouthOpenness: Float,
-    mouthPosition: NikiMouthPosition
-){ 
-    val context = LocalContext.current
-    val bitmap = remember(media.uri) {
-        try {
-            context.contentResolver.openInputStream(media.uri)?.use {
-                BitmapFactory.decodeStream(it)
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
+                .padding(12.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
-        contentAlignment = Alignment.Center
-    ) {
+            when (selectedTool) {
 
-        when (media.type) {
+                "Media" -> {
 
-            "Image" -> {
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Selected image",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
                     Text(
-                        "Unable to display image",
-                        color = Color.White
+                        "MEDIA LIBRARY",
+                        color = LightPurple,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    Button(
+                        onClick = {
+                            mediaPicker.launch(
+                                arrayOf("image/*", "video/*", "audio/*")
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Import Photos, Videos or Audio")
+                    }
+                }
+
+                "Audio" -> {
+
+                    Text(
+                        "AUDIO STUDIO",
+                        color = LightPurple,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    Button(
+                        onClick = {
+                            audioPicker.launch(arrayOf("audio/*"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Import Audio")
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+
+                        Button(
+                            onClick = {
+
+                                if (
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO,
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+
+                                    startNikiRecording(
+                                        context,
+                                        onRecorderReady = {
+                                            recorder = it
+                                            isRecording = true
+                                            recordingMessage =
+                                                "Recording in progress..."
+                                        },
+                                        onError = {
+                                            recordingMessage = it
+                                        },
+                                    )
+
+                                } else {
+
+                                    microphonePermission.launch(
+                                        Manifest.permission.RECORD_AUDIO
+                                    )
+                                }
+                            },
+                            enabled = !isRecording,
+                        ) {
+                            Text("Record")
+                        }
+
+                        Button(
+                            onClick = {
+
+                                try {
+
+                                    recorder?.stop()
+                                    recorder?.release()
+                                    recorder = null
+
+                                    isRecording = false
+
+                                    val file = lastNikiRecordingFile
+
+                                    if (file != null && file.exists()) {
+
+                                        audioUri = Uri.fromFile(file)
+
+                                        recordingMessage =
+                                            "Recording saved."
+                                    }
+
+                                } catch (_: Exception) {
+
+                                    recordingMessage =
+                                        "Recording could not be saved."
+                                }
+                            },
+                            enabled = isRecording,
+                        ) {
+                            Text("Stop Recording")
+                        }
+                    }
+
+                    if (audioUri != null) {
+
+                        Text(
+                            "Audio is ready for preview.",
+                            color = Color.White,
+                        )
+
+                        Button(
+                            onClick = { playPlayback() },
+                        ) {
+                            Text("Play Audio")
+                        }
+                    }
+
+                    Text(
+                        recordingMessage,
+                        color = LightPurple,
+                        fontSize = 12.sp,
                     )
                 }
-            }
 
-            "Video" -> {
-                AndroidView(
-                    factory = { ctx ->
-                        VideoView(ctx).apply {
-                            setVideoURI(media.uri)
+                "Lip Sync" -> {
 
-                            setOnPreparedListener { player ->
-                                player.isLooping = true
-                                start()
+                    Text(
+                        "NIKI LIP SYNC",
+                        color = LightPurple,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    Text(
+                        "Detected people: $detectedPeopleCount",
+                        color = Color.White,
+                    )
+
+                    if (detectedPeopleCount > 1) {
+
+                        Text(
+                            "Select the person speaking:",
+                            color = Color.White,
+                        )
+
+                        Row(
+                            modifier = Modifier.horizontalScroll(
+                                rememberScrollState()
+                            ),
+                        ) {
+
+                            repeat(detectedPeopleCount) { index ->
+
+                                FilterChip(
+                                    selected =
+                                        selectedPersonIndex == index,
+                                    onClick = {
+                                        selectedPersonIndex = index
+                                    },
+                                    label = {
+                                        Text("Person ${index + 1}")
+                                    },
+                                )
+
+                                Spacer(Modifier.width(5.dp))
                             }
                         }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-
-            "Audio" -> {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        "鈾�",
-                        color = LightPurple,
-                        fontSize = 55.sp
-                    )
+                    }
 
                     Text(
-                        "AUDIO ADDED",
+                        "Mouth position X",
                         color = Color.White,
-                        fontWeight = FontWeight.Bold
+                    )
+
+                    Slider(
+                        value = mouthPosition.x.coerceIn(0f, 1f),
+                        onValueChange = {
+                            mouthPosition = mouthPosition.copy(x = it)
+                        },
                     )
 
                     Text(
-                        media.name,
+                        "Mouth position Y",
+                        color = Color.White,
+                    )
+
+                    Slider(
+                        value = mouthPosition.y.coerceIn(0f, 1f),
+                        onValueChange = {
+                            mouthPosition = mouthPosition.copy(y = it)
+                        },
+                    )
+
+                    Text(
+                        "Mouth width",
+                        color = Color.White,
+                    )
+
+                    Slider(
+                        value = mouthPosition.width.coerceIn(0.01f, 0.3f),
+                        onValueChange = {
+                            mouthPosition = mouthPosition.copy(width = it)
+                        },
+                        valueRange = 0.01f..0.3f,
+                    )
+
+                    Text(
+                        "Mouth movement responds to audio analysis when the audio visualizer is connected.",
                         color = LightPurple,
-                        fontSize = 12.sp
+                        fontSize = 11.sp,
+                    )
+                }
+
+                "Body Motion" -> {
+
+                    Text(
+                        "BODY MOTION STUDIO",
+                        color = LightPurple,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    NikiMotionLibrary.presets.forEach { preset ->
+
+                        FilterChip(
+                            selected = selectedMotion == preset.id,
+                            onClick = {
+                                selectedMotion = preset.id
+                                motionElapsed = 0L
+                            },
+                            label = {
+                                Text(preset.title)
+                            },
+                        )
+                    }
+
+                    Text(
+                        "Motion intensity",
+                        color = Color.White,
+                    )
+
+                    Slider(
+                        value = motionIntensity,
+                        onValueChange = {
+                            motionIntensity = it
+                        },
+                        valueRange = 0f..2f,
+                    )
+
+                    Text(
+                        "${(motionIntensity * 100).toInt()}%",
+                        color = LightPurple,
+                    )
+
+                    Text(
+                        "Motion speed",
+                        color = Color.White,
+                    )
+
+                    Slider(
+                        value = motionSpeed,
+                        onValueChange = {
+                            motionSpeed = it
+                        },
+                        valueRange = 0.1f..4f,
+                    )
+
+                    Text(
+                        "Motion is evaluated by NikiMotionEngine and applied through NikiRigMotionAdapter. The current photo preview applies whole-image movement, not independent limb deformation.",
+                        color = LightPurple,
+                        fontSize = 11.sp,
+                    )
+                }
+
+                "Effects" -> {
+
+                    Text(
+                        "EFFECTS",
+                        color = LightPurple,
+                        fontWeight = FontWeight.Bold,
+                    )
+
+                    Slider(
+                        value = effectStrength,
+                        onValueChange = {
+                            effectStrength = it
+                        },
+                        valueRange = 0f..1f,
+                    )
+
+                    Text(
+                        "Effect intensity: ${(effectStrength * 100).toInt()}%",
+                        color = Color.White,
                     )
                 }
             }
-
-            else -> {
-                Text(
-                    "Select media to preview",
-                    color = Color.White
-                )
-            }
-        }
-
-        // STAGE FOUR: NIKI MOUTH ANIMATION
-        if (media.type == "Image") {
-            Canvas(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                val position = mouthPosition.normalized()
-                val imageAspect = if (bitmap != null)
-                    bitmap.width.toFloat() / bitmap.height.toFloat() else 1f
-                val canvasAspect = size.width / size.height
-                val drawWidth: Float
-                val drawHeight: Float
-                val offsetX: Float
-                val offsetY: Float
-                if (imageAspect > canvasAspect) {
-                    drawWidth = size.width
-                    drawHeight = size.width / imageAspect
-                    offsetX = 0f
-                    offsetY = (size.height - drawHeight) / 2f
-                } else {
-                    drawHeight = size.height
-                    drawWidth = size.height * imageAspect
-                    offsetX = (size.width - drawWidth) / 2f
-                    offsetY = 0f
-                }
-                val mouthWidth = drawWidth * position.width
-                val openness = mouthOpenness.coerceIn(0f, 1f)
-                val mouthHeight = (mouthWidth * (0.10f + openness * 0.65f))
-                    .coerceAtLeast(2.5f)
-                val centerX = offsetX + drawWidth * position.x
-                val centerY = offsetY + drawHeight * position.y
-                drawOval(
-                    color = Color(0xFF241018),
-                    topLeft = androidx.compose.ui.geometry.Offset(
-                        centerX - mouthWidth / 2f,
-                        centerY - mouthHeight / 2f
-                    ),
-                    size = androidx.compose.ui.geometry.Size(mouthWidth, mouthHeight)
-                )
-            }
-        }
-
-        // SUBTITLE DISPLAY
-        if (subtitle.isNotBlank()) {
-            Text(
-                text = subtitle,
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp)
-                    .background(
-                        Color.Black.copy(alpha = 0.65f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(10.dp)
-            )
         }
     }
 }
 
-@Composable
-fun EditorToolPanel(
-    selectedTool: String,
-    hasPhoto: Boolean,
-    subtitleText: String,
-    onSubtitleChange: (String) -> Unit,
-    onImportMedia: () -> Unit, 
-    onAudioSelected: (Uri) -> Unit,  
-    onMouthAmplitude: (Float) -> Unit
+/*
+ * Recording helper.
+ */
+private var lastNikiRecordingFile: File? = null
+
+private fun startNikiRecording(
+    context: android.content.Context,
+    onRecorderReady: (MediaRecorder) -> Unit,
+    onError: (String) -> Unit,
 ) {
 
-    val context = LocalContext.current
-
-    var audioUri by remember { mutableStateOf<Uri?>(null) } 
-    
-    var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) } 
-    var loadedAudioUri by remember { mutableStateOf<Uri?>(null) }
-    var audioPlaying by remember { mutableStateOf(false) } 
-    var audioRecorder by remember { mutableStateOf<MediaRecorder?>(null) } 
-    var audioVisualizer by remember {
-    mutableStateOf<Visualizer?>(null)
-}
-
-var pendingAudioPlay by remember {
-    mutableStateOf(false)
-}
-
-val mainHandler = remember {
-    Handler(Looper.getMainLooper())
-}
-    var isRecording by remember { mutableStateOf(false) }
-    var recordingFile by remember { mutableStateOf<File?>(null) }
-    var recorderMessage by remember { mutableStateOf("") }
-
-    var bodyMoving by remember { mutableStateOf(false) }
-    var effectStrength by remember { mutableFloatStateOf(0.5f) }
-    fun startRecording() {
     try {
+
         val folder = context.getExternalFilesDir(
             android.os.Environment.DIRECTORY_MUSIC
         ) ?: context.filesDir
 
         val file = File(
             folder,
-            "NIKI_${System.currentTimeMillis()}.m4a"
+            "NIKI_${System.currentTimeMillis()}.m4a",
         )
 
-        val recorder = MediaRecorder()
+        val mediaRecorder = MediaRecorder()
 
-        recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
-        recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-        recorder.setOutputFile(file.absolutePath)
-
-        recorder.prepare()
-        recorder.start()
-
-        recordingFile = file
-        audioRecorder = recorder
-        isRecording = true
-        recorderMessage = "Recording in progress..."
-    } catch (e: Exception) {
-        audioRecorder?.release()
-        audioRecorder = null
-        isRecording = false
-        recorderMessage = "Unable to start recording."
-    }
-}
-
-fun stopRecording() {
-    try {
-        audioRecorder?.stop()
-        audioRecorder?.release()
-        audioRecorder = null
-        isRecording = false
-
-        recordingFile?.let { file ->
-            if (file.exists()) {
-                val uri = Uri.fromFile(file)
-                audioUri = uri
-                onAudioSelected(uri)
-                recorderMessage = "Recording saved successfully."
-            }
-        }
-    } catch (e: Exception) {
-        recorderMessage = "Recording failed. Please try again."
-        audioRecorder?.release()
-        audioRecorder = null
-        isRecording = false
-    }
-}
-
-val microphonePermissionLauncher =
-    rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            startRecording()
-        } else {
-            recorderMessage = "Microphone permission was denied."
-        }
-    } 
-    
-fun stopAudioVisualizer() {
-    try {
-        audioVisualizer?.enabled = false
-        audioVisualizer?.release()
-    } catch (_: Exception) {
-    }
-
-    audioVisualizer = null
-    onMouthAmplitude(0f)
-}
-
-fun attachAudioVisualizer(player: MediaPlayer): Boolean {
-    stopAudioVisualizer()
-
-    return try {
-        val visualizer = Visualizer(player.audioSessionId)
-
-        visualizer.captureSize =
-            Visualizer.getCaptureSizeRange()[1]
-
-        visualizer.setDataCaptureListener(
-            object : Visualizer.OnDataCaptureListener {
-
-                override fun onWaveFormDataCapture(
-                    visualizer: Visualizer?,
-                    waveform: ByteArray?,
-                    samplingRate: Int
-                ) {
-                    if (waveform == null || waveform.isEmpty()) {
-                        return
-                    }
-
-                    var sum = 0.0
-                    for (sample in waveform) {
-                        val value = (sample.toInt() and 0xFF) - 128
-                        sum += value * value
-                    }
-                    val rms = kotlin.math.sqrt(sum / waveform.size)
-                    val level = (rms / 52.0).toFloat().coerceIn(0f, 1f)
-
-                    mainHandler.post {
-                        if (audioPlaying) {
-                            onMouthAmplitude(level)
-                        }
-                    }
-                }
-
-                override fun onFftDataCapture(
-                    visualizer: Visualizer?,
-                    fft: ByteArray?,
-                    samplingRate: Int
-                ) {
-                }
-            },
-            Visualizer.getMaxCaptureRate(),
-            true,
-            false
+        mediaRecorder.setAudioSource(
+            MediaRecorder.AudioSource.MIC
         )
 
-        visualizer.enabled = true
-        audioVisualizer = visualizer
-        true
-    } catch (e: Exception) {
-        recorderMessage = "Mouth analysis could not start: ${e.message ?: "audio visualizer unavailable"}"
-        false
-    }
-}
+        mediaRecorder.setOutputFormat(
+            MediaRecorder.OutputFormat.MPEG_4
+        )
 
-fun startAudioPlayback(
-    enableVisualizer: Boolean = true
-) {
-    val uri = audioUri ?: return
+        mediaRecorder.setAudioEncoder(
+            MediaRecorder.AudioEncoder.AAC
+        )
 
-    try {
-        val player = if (
-            audioPlayer == null || loadedAudioUri != uri
-        ) {
-            stopAudioVisualizer()
-            audioPlayer?.release()
-            audioPlayer = null
-            loadedAudioUri = null
-            val newPlayer = MediaPlayer.create(context, uri)
-                ?: run {
-                    recorderMessage = "Unable to open this audio."
-                    return
-                }
+        mediaRecorder.setOutputFile(file.absolutePath)
 
-            audioPlayer = newPlayer
-            loadedAudioUri = uri
-            newPlayer
-        } else {
-            audioPlayer!!
-        }
+        mediaRecorder.prepare()
+        mediaRecorder.start()
 
-        player.setOnCompletionListener {
-            audioPlaying = false
-            stopAudioVisualizer()
-        }
+        lastNikiRecordingFile = file
 
-        if (player.isPlaying) {
-            player.pause()
-            audioPlaying = false
-            stopAudioVisualizer()
-        } else {
-            if (
-                player.duration > 0 &&
-                player.currentPosition >= player.duration
-            ) {
-                player.seekTo(0)
-            }
-
-            if (enableVisualizer) {
-                if (!attachAudioVisualizer(player)) {
-                    audioPlaying = false
-                    onMouthAmplitude(0f)
-                    return
-                }
-            } else {
-                stopAudioVisualizer()
-            }
-
-            player.start()
-            audioPlaying = true
-        }
+        onRecorderReady(mediaRecorder)
 
     } catch (e: Exception) {
-        audioPlaying = false
-        stopAudioVisualizer()
-        recorderMessage = "Unable to play audio."
-    }
-}
-val visualizerPermissionLauncher =
-    rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            pendingAudioPlay = true
-        } else {
-            recorderMessage =
-                "Audio will play without mouth animation."
-            startAudioPlayback(false)
-        }
-    }
 
-fun playTalkingPhoto() {
-    if (!hasPhoto) {
-        recorderMessage = "Import and select a photograph in Media first."
-        return
-    }
-    if (audioUri == null) {
-        recorderMessage = "Record or import your voice in Audio first."
-        return
-    }
-    if (ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
-    ) {
-        startAudioPlayback()
-    } else {
-        visualizerPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-    }
-}
-
-LaunchedEffect(pendingAudioPlay) {
-    if (pendingAudioPlay) {
-        pendingAudioPlay = false
-        startAudioPlayback()
-    }
-}
-    val audioPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            audioUri = uri
-            onAudioSelected(uri)
-        }
-    }
-
-    val speechLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val spokenText = result.data
-                ?.getStringArrayListExtra(
-                    RecognizerIntent.EXTRA_RESULTS
-                )
-                ?.firstOrNull()
-
-            if (!spokenText.isNullOrBlank()) {
-                onSubtitleChange(
-                    if (subtitleText.isBlank()) spokenText
-                    else "$subtitleText $spokenText"
-                )
-            }
-        }
-    }
-
-    DisposableEffect(Unit) {
-    onDispose {
-        stopAudioVisualizer()
-
-        audioPlayer?.release()
-        audioPlayer = null
-    }
-}
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 260.dp)
-            .verticalScroll(rememberScrollState())
-            .background(Navy, RoundedCornerShape(14.dp))
-            .padding(12.dp)
-    ) {
-
-        when (selectedTool) {
-
-            "Media" -> {
-                Text(
-                    "MEDIA LIBRARY",
-                    color = LightPurple,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Button(
-                    onClick = onImportMedia,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Import Photos, Videos or Audio")
-                }
-            }
-
-            "Audio" -> {
-                Text(
-                    "AUDIO WORKSPACE",
-                    color = LightPurple,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Button(
-                    onClick = {
-                        audioPicker.launch(arrayOf("audio/*"))
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Import Audio")
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-Row(
-    horizontalArrangement = Arrangement.spacedBy(8.dp)
-) {
-    Button(
-        onClick = {
-            if (
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-            ) {
-                startRecording()
-            } else {
-                microphonePermissionLauncher.launch(
-                    Manifest.permission.RECORD_AUDIO
-                )
-            }
-        },
-        enabled = !isRecording
-    ) {
-        Text("Start Recording")
-    }
-
-    Button(
-        onClick = {
-            stopRecording()
-        },
-        enabled = isRecording
-    ) {
-        Text("Stop Recording")
-    }
-}
-
-if (recorderMessage.isNotBlank()) {
-    Text(
-        recorderMessage,
-        color = LightPurple,
-        fontSize = 12.sp
-    )
-}
-
-Spacer(Modifier.height(8.dp))
-                if (audioUri != null) {
-                    Text(
-                        "Audio selected successfully",
-                        color = Color.White
-                    )
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-    onClick = {
-        if (audioPlaying) {
-            startAudioPlayback()
-        } else if (
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.RECORD_AUDIO
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            startAudioPlayback()
-        } else {
-            visualizerPermissionLauncher.launch(
-                Manifest.permission.RECORD_AUDIO
-            )
-        }
-    }
-) {
-    Text(
-        if (audioPlaying) "Pause"
-        else "Play Audio + Mouth"
-    )
-}
-
-      OutlinedButton(
-    onClick = {
-        stopAudioVisualizer()
-
-        audioPlayer?.release()
-        audioPlayer = null
-
-        audioUri = null
-        audioPlaying = false
-        onMouthAmplitude(0f)
-    }
-) {
-    Text("Remove")
-}
-                    }
-            
-               }
-          }
-
-            "Subtitles" -> {
-                Text(
-                    "SUBTITLE STUDIO",
-                    color = LightPurple,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = subtitleText,
-                    onValueChange = onSubtitleChange,
-                    label = { Text("Write your subtitles") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Button(
-                    onClick = {
-                        try {
-                            val intent = Intent(
-                                RecognizerIntent.ACTION_RECOGNIZE_SPEECH
-                            ).apply {
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
-                                )
-                                putExtra(
-                                    RecognizerIntent.EXTRA_LANGUAGE,
-                                    Locale.getDefault()
-                                )
-                                putExtra(
-                                    RecognizerIntent.EXTRA_PROMPT,
-                                    "Speak your subtitle"
-                                )
-                            }
-
-                            speechLauncher.launch(intent)
-                        } catch (e: Exception) {
-                            onSubtitleChange(
-                                subtitleText.ifBlank {
-                                    "Speech recognition is unavailable."
-                                }
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Speak to Create Subtitles")
-                }
-
-                Text(
-                    "Your text appears over the preview. Subtitle timing and animation will be added to the timeline in a later stage.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
-            }
-
-            "Lip Sync" -> {
-                Text(
-                    "NIKI SPEAKING STUDIO",
-                    color = LightPurple,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Select a photo, record or import a voice, then play it to animate the detected mouth.",
-                    color = Color.White
-                )
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { playTalkingPhoto() },
-                    enabled = hasPhoto && audioUri != null,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (audioPlaying) "Pause Talking Photo" else "Play Voice + Animate Photo")
-                }
-                if (recorderMessage.isNotBlank()) {
-                    Text(recorderMessage, color = LightPurple, fontSize = 12.sp)
-                } else {
-                    Text(
-                        when {
-                            !hasPhoto -> "Step 1: Import and select a photo in Media."
-                            audioUri == null -> "Step 2: Record or import your voice in Audio."
-                            else -> "Ready. Play your voice to see the detected mouth respond."
-                        },
-                        color = Color.LightGray,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-            "Body Motion" -> {
-                NikiBodyMotionPanel()
-            }
-
-            "Effects" -> {
-                Text(
-                    "VIDEO EFFECTS",
-                    color = LightPurple,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Text(
-                    "Effect intensity",
-                    color = Color.White
-                )
-
-                Slider(
-                    value = effectStrength,
-                    onValueChange = {
-                        effectStrength = it
-                    },
-                    valueRange = 0f..1f
-                )
-
-                Text(
-                    "${(effectStrength * 100).toInt()}% intensity",
-                    color = LightPurple
-                )
-
-                Text(
-                    "This is an intensity control prototype. Actual video effects will be connected during rendering development.",
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
-            }
-        }
+        onError(
+            "Unable to start recording: ${e.message}"
+        )
     }
 }
