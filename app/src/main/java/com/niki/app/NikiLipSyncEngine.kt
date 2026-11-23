@@ -1,17 +1,5 @@
 package com.niki.app
 
-data class NikiMouthPosition(
-    val x: Float = 0.5f,
-    val y: Float = 0.62f,
-    val width: Float = 0.09f
-) {
-    fun normalized() = copy(
-        x = x.coerceIn(0f, 1f),
-        y = y.coerceIn(0f, 1f),
-        width = width.coerceIn(0.015f, 0.3f)
-    )
-}
-
 data class NikiMouthFrame(
     val openness: Float,
     val isSpeaking: Boolean
