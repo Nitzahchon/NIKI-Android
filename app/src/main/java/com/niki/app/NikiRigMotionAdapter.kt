@@ -1,3 +1,4 @@
+
 package com.niki.app
 
 data class NikiRigBone(
@@ -32,8 +33,8 @@ data class NikiRigValidation(
 object NikiRigMotionAdapter {
 
     /**
-     * Applies a motion frame relative to the saved rest pose.
-     * This prevents rotation drift between preview frames.
+     * Applies motion relative to the original rest pose.
+     * Each frame is calculated independently to prevent rotation drift.
      */
     fun apply(
         graph: NikiRigGraph,
@@ -51,14 +52,17 @@ object NikiRigMotionAdapter {
 
         return NikiRigPose(
             graph = graph.copy(bones = posedBones),
-            rootYOffset = frame.rootYOffset,
-            progress = frame.progress.coerceIn(0f, 1f),
+            rootYOffset = frame.rootYOffset
+                .takeIf { it.isFinite() } ?: 0f,
+            progress = frame.progress
+                .takeIf { it.isFinite() }
+                ?.coerceIn(0f, 1f) ?: 0f,
             finished = frame.finished,
         )
     }
 
     /**
-     * Evaluates a preset and applies its frame to a rig.
+     * Evaluates a motion preset and applies its frame.
      */
     fun evaluate(
         graph: NikiRigGraph,
@@ -68,9 +72,15 @@ object NikiRigMotionAdapter {
         intensity: Float = 1f,
     ): NikiRigPose? {
 
-        val validation = validate(graph)
+        if (!validate(graph).valid) {
+            return null
+        }
 
-        if (!validation.valid) {
+        if (!speed.isFinite() || speed <= 0f) {
+            return null
+        }
+
+        if (!intensity.isFinite() || intensity < 0f) {
             return null
         }
 
@@ -79,7 +89,7 @@ object NikiRigMotionAdapter {
 
         val frame = NikiMotionEngine.evaluate(
             preset = preset,
-            elapsedMs = elapsedMs,
+            elapsedMs = elapsedMs.coerceAtLeast(0L),
             speed = speed,
             intensity = intensity,
         )
@@ -88,10 +98,9 @@ object NikiRigMotionAdapter {
     }
 
     /**
-     * Restores the original rig rotations.
+     * Restores every bone to its original rotation.
      */
     fun reset(graph: NikiRigGraph): NikiRigGraph {
-
         return graph.copy(
             bones = graph.bones.mapValues { (_, bone) ->
                 bone.copy(
@@ -102,7 +111,7 @@ object NikiRigMotionAdapter {
     }
 
     /**
-     * Checks the rig hierarchy before animation.
+     * Validates the rig before animation.
      */
     fun validate(graph: NikiRigGraph): NikiRigValidation {
 
@@ -116,8 +125,11 @@ object NikiRigMotionAdapter {
             errors += "The rig has no root bone."
         }
 
-        graph.rootBoneIds.forEach { rootId ->
+        if (graph.rootBoneIds.size != graph.rootBoneIds.distinct().size) {
+            errors += "The root list contains duplicate bone IDs."
+        }
 
+        graph.rootBoneIds.forEach { rootId ->
             val root = graph.bones[rootId]
 
             if (root == null) {
@@ -146,18 +158,19 @@ object NikiRigMotionAdapter {
             }
 
             if (!bone.rotationDegrees.isFinite()) {
-                errors += "Bone '${bone.id}' has an invalid rotation."
+                errors += "Bone '${bone.id}' has an invalid current rotation."
             }
 
             if (
                 bone.parentId != null &&
                 bone.parentId !in graph.bones
             ) {
-                errors += "Bone '${bone.id}' references missing parent '${bone.parentId}'."
+                errors +=
+                    "Bone '${bone.id}' references missing parent '${bone.parentId}'."
             }
         }
 
-        // Check for hierarchy cycles.
+        // Detect cycles in the parent hierarchy.
         graph.bones.keys.forEach { startId ->
 
             val visited = mutableSetOf<String>()
@@ -174,6 +187,7 @@ object NikiRigMotionAdapter {
             }
         }
 
+        // Confirm that every parentless bone is listed as a root.
         val actualRoots = graph.bones.values
             .filter { it.parentId == null }
             .map { it.id }
