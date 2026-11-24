@@ -41,22 +41,40 @@ data class NikiRigJoint(
 )
 
 /**
- * PhotoRig data for one independently animated character.
+ * Individual bone in the NIKI skeletal rig.
  *
- * This is deliberately named NikiCharacterRigData to avoid
- * conflicting with the existing NikiCharacterRig object.
+ * Coordinates are relative to the parent bone.
  */
- 
-/**
- * Connection graph for a character's body rig.
- * Defines how joints are connected for independent movement.
- */
-data class NikiRigGraph(
-    val joints: Map<String, NikiRigJoint> = emptyMap(),
-    val connections: Map<String, List<String>> = emptyMap(),
-    val rootJointId: String? = null
+data class NikiRigBone(
+    val id: String,
+    val parentId: String?,
+    val x: Float,
+    val y: Float,
+    val length: Float,
+    val rotationDegrees: Float
 )
 
+/**
+ * Complete rig graph.
+ *
+ * Supports both:
+ * 1. Bone-based skeletal animation.
+ * 2. Joint-based PhotoRig connections.
+ */
+data class NikiRigGraph(
+    // Existing joint-based structure.
+    val joints: Map<String, NikiRigJoint> = emptyMap(),
+    val connections: Map<String, List<String>> = emptyMap(),
+    val rootJointId: String? = null,
+
+    // Bone-based skeletal structure.
+    val rootBoneIds: List<String> = emptyList(),
+    val bones: Map<String, NikiRigBone> = emptyMap()
+)
+
+/**
+ * PhotoRig data for one independently animated character.
+ */
 data class NikiCharacterRigData(
     val characterId: String,
     val joints: Map<String, NikiRigJoint> = emptyMap(),
@@ -69,8 +87,6 @@ data class NikiCharacterRigData(
 
 /**
  * Individual detected person.
- *
- * Existing facial fields are retained for compatibility.
  */
 data class NikiDetectedPerson(
     val id: String,
@@ -85,16 +101,9 @@ data class NikiDetectedPerson(
     val leftEyeOpenProbability: Float?,
     val rightEyeOpenProbability: Float?,
 
-    // Extended facial rig.
     val faceRig: NikiFaceRig? = null,
-
-    // Extended body rig.
     val characterRig: NikiCharacterRigData? = null,
-
-    // Character classification.
     val characterType: String = "unknown",
-
-    // Detection confidence.
     val detectionConfidence: Float = 1f
 )
 
@@ -109,7 +118,6 @@ data class NikiPhotoRigProject(
     val rigVersion: Int = 2,
     val rigType: String = "multi_face_landmark_rig_v2",
     val createdAtMillis: Long = System.currentTimeMillis(),
-
     val selectedCharacterId: String? = null,
     val animationReady: Boolean = false,
     val backgroundPreserved: Boolean = false
