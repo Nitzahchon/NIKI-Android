@@ -1,117 +1,238 @@
 
 package com.niki.app
 
+import android.graphics.Bitmap
 import android.graphics.Rect
+import com.google.android.gms.tasks.Task
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.mlkit.vision.face.FaceLandmark
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
- * Normalized image coordinates.
- * x and y range from 0f to 1f.
- */
-data class NikiRigPoint(
-    val x: Float,
-    val y: Float
-)
-
-/**
- * Facial rig information.
- */
-data class NikiFaceRig(
-    val leftEye: NikiRigPoint? = null,
-    val rightEye: NikiRigPoint? = null,
-    val nose: NikiRigPoint? = null,
-    val mouthLeft: NikiRigPoint? = null,
-    val mouthRight: NikiRigPoint? = null,
-    val mouthBottom: NikiRigPoint? = null,
-    val mouthCenter: NikiRigPoint? = null,
-    val mouthWidth: Float = 0f,
-    val mouthHeight: Float = 0f,
-    val leftEar: NikiRigPoint? = null,
-    val rightEar: NikiRigPoint? = null
-)
-
-/**
- * A body joint detected or manually positioned on a character.
- */
-data class NikiRigJoint(
-    val id: String,
-    val position: NikiRigPoint,
-    val parentJointId: String? = null,
-    val confidence: Float = 1f,
-    val movable: Boolean = true
-)
-
-/**
- * Body structure for one independently animated character.
+ * NIKI automatic facial rig detection.
  *
- * boneIds refer to bones stored in the existing NikiRigGraph.
- */
-data class NikiCharacterRig(
-    val characterId: String,
-    val joints: Map<String, NikiRigJoint> = emptyMap(),
-    val boneIds: List<String> = emptyList(),
-    val graph: NikiRigGraph? = null,
-    val isSegmented: Boolean = false,
-    val segmentationStatus: String = "not_available",
-    val rigGenerated: Boolean = false
-)
-
-/**
- * Individual detected person.
+ * Detects faces, maps facial landmarks and generates normalized
+ * facial rig information for every detected person.
  *
- * Existing facial fields are retained for compatibility.
+ * Full-body pose detection, segmentation and image deformation
+ * require additional processing components.
  */
-data class NikiDetectedPerson(
-    val id: String,
-    val displayName: String,
-    val faceBounds: Rect,
-    val normalizedFaceBounds: List<Float>,
-    val landmarks: Map<String, NikiRigPoint>,
-    val headYaw: Float,
-    val headPitch: Float,
-    val headRoll: Float,
-    val smilingProbability: Float?,
-    val leftEyeOpenProbability: Float?,
-    val rightEyeOpenProbability: Float?,
+object NikiPhotoAutoRig {
 
-    // Extended facial rig.
-    val faceRig: NikiFaceRig? = null,
+    private val options = FaceDetectorOptions.Builder()
+        .setPerformanceMode(
+            FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE
+        )
+        .setLandmarkMode(
+            FaceDetectorOptions.LANDMARK_MODE_ALL
+        )
+        .setClassificationMode(
+            FaceDetectorOptions.CLASSIFICATION_MODE_ALL
+        )
+        .setMinFaceSize(0.06f)
+        .enableTracking()
+        .build()
 
-    // Extended body rig.
-    val characterRig: NikiCharacterRig? = null,
+    suspend fun createRig(bitmap: Bitmap): NikiPhotoRigProject {
 
-    // Character classification.
-    val characterType: String = "unknown",
+        require(!bitmap.isRecycled) {
+            "The selected photo is no longer available."
+        }
 
-    // Detection confidence.
-    val detectionConfidence: Float = 1f
-)
+        require(bitmap.width > 0 && bitmap.height > 0) {
+            "The selected photo is empty."
+        }
 
-/**
- * Complete NIKI PhotoRig project.
- */
-data class NikiPhotoRigProject(
-    val projectId: String,
-    val sourceWidth: Int,
-    val sourceHeight: Int,
-    val people: List<NikiDetectedPerson>,
-    val rigVersion: Int = 2,
-    val rigType: String = "character_facial_and_body_rig",
-    val createdAtMillis: Long = System.currentTimeMillis(),
+        val detector = FaceDetection.getClient(options)
 
-    // Project-level animation information.
-    val selectedCharacterId: String? = null,
-    val animationReady: Boolean = false,
-    val backgroundPreserved: Boolean = true
-) {
-    val personCount: Int
-        get() = people.size
+        try {
+            val image = InputImage.fromBitmap(bitmap, 0)
 
-    val hasFacialRig: Boolean
-        get() = people.any { it.faceRig != null }
+            val faces = detector.process(image)
+                .awaitTask()
+                .sortedBy {
+                    it.boundingBox.centerX()
+                }
 
-    val hasBodyRig: Boolean
-        get() = people.any { it.characterRig != null }
+            val people = faces.mapIndexed { index, face ->
+                face.toPersonRig(
+                    number = index + 1,
+                    imageWidth = bitmap.width,
+                    imageHeight = bitmap.height
+                )
+            }
 
-    val characterIds: List<String>
-        get() = people.map { it.id }
+            return NikiPhotoRigProject(
+                projectId = "niki_${System.currentTimeMillis()}",
+                sourceWidth = bitmap.width,
+                sourceHeight = bitmap.height,
+                people = people,
+                rigVersion = 2,
+                rigType = "character_facial_and_body_rig",
+                selectedCharacterId = people.firstOrNull()?.id,
+                animationReady = false,
+                backgroundPreserved = true
+            )
+
+        } finally {
+            detector.close()
+        }
+    }
+
+    private fun Face.toPersonRig(
+        number: Int,
+        imageWidth: Int,
+        imageHeight: Int
+    ): NikiDetectedPerson {
+
+        val box = Rect(boundingBox)
+
+        val faceWidth = box.width()
+            .toFloat()
+            .coerceAtLeast(1f)
+
+        val faceHeight = box.height()
+            .toFloat()
+            .coerceAtLeast(1f)
+
+        val points = linkedMapOf<String, NikiRigPoint>()
+
+        fun normalizedPoint(
+            x: Float,
+            y: Float
+        ): NikiRigPoint {
+            return NikiRigPoint(
+                x = (x / imageWidth).coerceIn(0f, 1f),
+                y = (y / imageHeight).coerceIn(0f, 1f)
+            )
+        }
+
+        fun addLandmark(
+            name: String,
+            landmarkType: Int
+        ) {
+            val position = getLandmark(landmarkType)?.position
+                ?: return
+
+            points[name] = normalizedPoint(
+                position.x,
+                position.y
+            )
+        }
+
+        addLandmark("left_eye", FaceLandmark.LEFT_EYE)
+        addLandmark("right_eye", FaceLandmark.RIGHT_EYE)
+        addLandmark("nose_base", FaceLandmark.NOSE_BASE)
+        addLandmark("mouth_left", FaceLandmark.MOUTH_LEFT)
+        addLandmark("mouth_right", FaceLandmark.MOUTH_RIGHT)
+        addLandmark("mouth_bottom", FaceLandmark.MOUTH_BOTTOM)
+        addLandmark("left_ear", FaceLandmark.LEFT_EAR)
+        addLandmark("right_ear", FaceLandmark.RIGHT_EAR)
+
+        val leftMouth = points["mouth_left"]
+        val rightMouth = points["mouth_right"]
+        val bottomMouth = points["mouth_bottom"]
+
+        val mouthCenter = if (
+            leftMouth != null && rightMouth != null
+        ) {
+            NikiRigPoint(
+                x = (leftMouth.x + rightMouth.x) / 2f,
+                y = (leftMouth.y + rightMouth.y) / 2f
+            )
+        } else {
+            null
+        }
+
+        /**
+         * Mouth dimensions are relative to the detected face.
+         * They are not fixed screen-pixel dimensions.
+         */
+        val mouthWidth = if (
+            leftMouth != null && rightMouth != null
+        ) {
+            kotlin.math.abs(
+                rightMouth.x - leftMouth.x
+            ) * imageWidth / faceWidth
+        } else {
+            0f
+        }
+
+        val mouthHeight = if (
+            mouthCenter != null && bottomMouth != null
+        ) {
+            2f * kotlin.math.abs(
+                bottomMouth.y - mouthCenter.y
+            ) * imageHeight / faceHeight
+        } else {
+            0f
+        }
+
+        val faceRig = NikiFaceRig(
+            leftEye = points["left_eye"],
+            rightEye = points["right_eye"],
+            nose = points["nose_base"],
+            mouthLeft = leftMouth,
+            mouthRight = rightMouth,
+            mouthBottom = bottomMouth,
+            mouthCenter = mouthCenter,
+            mouthWidth = mouthWidth.coerceIn(0f, 1f),
+            mouthHeight = mouthHeight.coerceIn(0f, 1f),
+            leftEar = points["left_ear"],
+            rightEar = points["right_ear"]
+        )
+
+        val normalizedBounds = listOf(
+            (box.left.toFloat() / imageWidth).coerceIn(0f, 1f),
+            (box.top.toFloat() / imageHeight).coerceIn(0f, 1f),
+            (box.right.toFloat() / imageWidth).coerceIn(0f, 1f),
+            (box.bottom.toFloat() / imageHeight).coerceIn(0f, 1f)
+        )
+
+        return NikiDetectedPerson(
+            id = "person_$number",
+            displayName = "Person $number",
+            faceBounds = box,
+            normalizedFaceBounds = normalizedBounds,
+            landmarks = points,
+            headYaw = headEulerAngleY,
+            headPitch = headEulerAngleX,
+            headRoll = headEulerAngleZ,
+            smilingProbability = smilingProbability,
+            leftEyeOpenProbability = leftEyeOpenProbability,
+            rightEyeOpenProbability = rightEyeOpenProbability,
+            faceRig = faceRig,
+            characterRig = null,
+            characterType = "unknown",
+            detectionConfidence = 1f
+        )
+    }
+
+    /**
+     * Converts Google Play Services Task into a coroutine result.
+     */
+    private suspend fun <T> Task<T>.awaitTask(): T =
+        suspendCancellableCoroutine { continuation ->
+
+            addOnSuccessListener { result ->
+                if (continuation.isActive) {
+                    continuation.resume(result)
+                }
+            }
+
+            addOnFailureListener { error ->
+                if (continuation.isActive) {
+                    continuation.resumeWithException(error)
+                }
+            }
+
+            addOnCanceledListener {
+                continuation.cancel()
+            }
+        }
 }
