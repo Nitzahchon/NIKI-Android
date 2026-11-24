@@ -1,4 +1,4 @@
-r
+
 package com.niki.app
 
 import android.content.ContentValues
