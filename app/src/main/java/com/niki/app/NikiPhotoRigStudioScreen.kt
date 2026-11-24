@@ -1,4 +1,4 @@
-
+r
 package com.niki.app
 
 import android.content.ContentValues
@@ -604,8 +604,9 @@ private fun NikiPhotoRigProject.toJson(): JSONObject {
         .put("sourceWidth", sourceWidth)
         .put("sourceHeight", sourceHeight)
         .put("createdAtMillis", createdAtMillis)
-        .put("selectedCharacterId", project.selectedCharacterId)
-        .put("animationReady", project.animationReady)
-        .put("backgroundPreserved", project.backgroundPreserved)
-        .put("people", peopleArray)
+        .put("selectedCharacterId", project.selectedCharacterId) 
+        .put("selectedCharacterId", selectedCharacterId) 
+        .put("animationReady", animationReady)
+        .put("backgroundPreserved", backgroundPreserved)
+ 
 }
