@@ -1,113 +1,117 @@
+
 package com.niki.app
 
-import android.graphics.Bitmap
 import android.graphics.Rect
-import com.google.android.gms.tasks.Task
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.face.Face
-import com.google.mlkit.vision.face.FaceDetection
-import com.google.mlkit.vision.face.FaceDetectorOptions
-import com.google.mlkit.vision.face.FaceLandmark
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
- * First-pass automatic photo rigging.
- *
- * Detects every face returned by ML Kit and creates an independent facial
- * landmark rig for each face. It deliberately does not claim to create a
- * complete body skeleton: that requires a separate multi-person pose model
- * and a renderer/deformation stage.
+ * Normalized image coordinates.
+ * x and y range from 0f to 1f.
  */
-object NikiPhotoAutoRig {
-    private val options = FaceDetectorOptions.Builder()
-        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
-        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_ALL)
-        .setMinFaceSize(0.06f)
-        .enableTracking()
-        .build()
+data class NikiRigPoint(
+    val x: Float,
+    val y: Float
+)
 
-    suspend fun createRig(bitmap: Bitmap): NikiPhotoRigProject {
-        require(bitmap.width > 0 && bitmap.height > 0) { "The selected photo is empty." }
+/**
+ * Facial rig information.
+ */
+data class NikiFaceRig(
+    val leftEye: NikiRigPoint? = null,
+    val rightEye: NikiRigPoint? = null,
+    val nose: NikiRigPoint? = null,
+    val mouthLeft: NikiRigPoint? = null,
+    val mouthRight: NikiRigPoint? = null,
+    val mouthBottom: NikiRigPoint? = null,
+    val mouthCenter: NikiRigPoint? = null,
+    val mouthWidth: Float = 0f,
+    val mouthHeight: Float = 0f,
+    val leftEar: NikiRigPoint? = null,
+    val rightEar: NikiRigPoint? = null
+)
 
-        val detector = FaceDetection.getClient(options)
-        try {
-            val image = InputImage.fromBitmap(bitmap, 0)
-            val faces = detector.process(image).awaitTask()
-                .sortedBy { it.boundingBox.centerX() }
+/**
+ * A body joint detected or manually positioned on a character.
+ */
+data class NikiRigJoint(
+    val id: String,
+    val position: NikiRigPoint,
+    val parentJointId: String? = null,
+    val confidence: Float = 1f,
+    val movable: Boolean = true
+)
 
-            val people = faces.mapIndexed { index, face ->
-                face.toPersonRig(index + 1, bitmap.width, bitmap.height)
-            }
+/**
+ * Body structure for one independently animated character.
+ *
+ * boneIds refer to bones stored in the existing NikiRigGraph.
+ */
+data class NikiCharacterRig(
+    val characterId: String,
+    val joints: Map<String, NikiRigJoint> = emptyMap(),
+    val boneIds: List<String> = emptyList(),
+    val graph: NikiRigGraph? = null,
+    val isSegmented: Boolean = false,
+    val segmentationStatus: String = "not_available",
+    val rigGenerated: Boolean = false
+)
 
-            return NikiPhotoRigProject(
-                projectId = "niki_${System.currentTimeMillis()}",
-                sourceWidth = bitmap.width,
-                sourceHeight = bitmap.height,
-                people = people
-            )
-        } finally {
-            detector.close()
-        }
-    }
+/**
+ * Individual detected person.
+ *
+ * Existing facial fields are retained for compatibility.
+ */
+data class NikiDetectedPerson(
+    val id: String,
+    val displayName: String,
+    val faceBounds: Rect,
+    val normalizedFaceBounds: List<Float>,
+    val landmarks: Map<String, NikiRigPoint>,
+    val headYaw: Float,
+    val headPitch: Float,
+    val headRoll: Float,
+    val smilingProbability: Float?,
+    val leftEyeOpenProbability: Float?,
+    val rightEyeOpenProbability: Float?,
 
-    private fun Face.toPersonRig(
-        number: Int,
-        imageWidth: Int,
-        imageHeight: Int
-    ): NikiDetectedPerson {
-        val box = Rect(boundingBox)
-        val points = linkedMapOf<String, NikiRigPoint>()
+    // Extended facial rig.
+    val faceRig: NikiFaceRig? = null,
 
-        fun add(name: String, landmarkType: Int) {
-            val point = getLandmark(landmarkType)?.position ?: return
-            points[name] = NikiRigPoint(
-                x = (point.x / imageWidth).coerceIn(0f, 1f),
-                y = (point.y / imageHeight).coerceIn(0f, 1f)
-            )
-        }
+    // Extended body rig.
+    val characterRig: NikiCharacterRig? = null,
 
-        add("left_eye", FaceLandmark.LEFT_EYE)
-        add("right_eye", FaceLandmark.RIGHT_EYE)
-        add("nose_base", FaceLandmark.NOSE_BASE)
-        add("mouth_left", FaceLandmark.MOUTH_LEFT)
-        add("mouth_right", FaceLandmark.MOUTH_RIGHT)
-        add("mouth_bottom", FaceLandmark.MOUTH_BOTTOM)
-        add("left_ear", FaceLandmark.LEFT_EAR)
-        add("right_ear", FaceLandmark.RIGHT_EAR)
+    // Character classification.
+    val characterType: String = "unknown",
 
-        return NikiDetectedPerson(
-            id = "person_$number",
-            displayName = "Person $number",
-            faceBounds = box,
-            normalizedFaceBounds = listOf(
-                (box.left.toFloat() / imageWidth).coerceIn(0f, 1f),
-                (box.top.toFloat() / imageHeight).coerceIn(0f, 1f),
-                (box.right.toFloat() / imageWidth).coerceIn(0f, 1f),
-                (box.bottom.toFloat() / imageHeight).coerceIn(0f, 1f)
-            ),
-            landmarks = points,
-            headYaw = headEulerAngleY,
-            headPitch = headEulerAngleX,
-            headRoll = headEulerAngleZ,
-            smilingProbability = smilingProbability,
-            leftEyeOpenProbability = leftEyeOpenProbability,
-            rightEyeOpenProbability = rightEyeOpenProbability
-        )
-    }
+    // Detection confidence.
+    val detectionConfidence: Float = 1f
+)
 
-    private suspend fun <T> Task<T>.awaitTask(): T =
-        suspendCancellableCoroutine { continuation ->
-            addOnSuccessListener { result ->
-                if (continuation.isActive) continuation.resume(result)
-            }
-            addOnFailureListener { error ->
-                if (continuation.isActive) continuation.resumeWithException(error)
-            }
-            addOnCanceledListener {
-                continuation.cancel()
-            }
-        }
+/**
+ * Complete NIKI PhotoRig project.
+ */
+data class NikiPhotoRigProject(
+    val projectId: String,
+    val sourceWidth: Int,
+    val sourceHeight: Int,
+    val people: List<NikiDetectedPerson>,
+    val rigVersion: Int = 2,
+    val rigType: String = "character_facial_and_body_rig",
+    val createdAtMillis: Long = System.currentTimeMillis(),
+
+    // Project-level animation information.
+    val selectedCharacterId: String? = null,
+    val animationReady: Boolean = false,
+    val backgroundPreserved: Boolean = true
+) {
+    val personCount: Int
+        get() = people.size
+
+    val hasFacialRig: Boolean
+        get() = people.any { it.faceRig != null }
+
+    val hasBodyRig: Boolean
+        get() = people.any { it.characterRig != null }
+
+    val characterIds: List<String>
+        get() = people.map { it.id }
 }
