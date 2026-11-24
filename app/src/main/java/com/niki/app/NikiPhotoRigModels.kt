@@ -41,11 +41,12 @@ data class NikiRigJoint(
 )
 
 /**
- * Body structure for one independently animated character.
+ * PhotoRig data for one independently animated character.
  *
- * boneIds refer to bones stored in the existing NikiRigGraph.
+ * This is deliberately named NikiCharacterRigData to avoid
+ * conflicting with the existing NikiCharacterRig object.
  */
-data class NikiCharacterRig(
+data class NikiCharacterRigData(
     val characterId: String,
     val joints: Map<String, NikiRigJoint> = emptyMap(),
     val boneIds: List<String> = emptyList(),
@@ -77,7 +78,7 @@ data class NikiDetectedPerson(
     val faceRig: NikiFaceRig? = null,
 
     // Extended body rig.
-    val characterRig: NikiCharacterRig? = null,
+    val characterRig: NikiCharacterRigData? = null,
 
     // Character classification.
     val characterType: String = "unknown",
@@ -95,13 +96,12 @@ data class NikiPhotoRigProject(
     val sourceHeight: Int,
     val people: List<NikiDetectedPerson>,
     val rigVersion: Int = 2,
-    val rigType: String = "character_facial_and_body_rig",
+    val rigType: String = "multi_face_landmark_rig_v2",
     val createdAtMillis: Long = System.currentTimeMillis(),
 
-    // Project-level animation information.
     val selectedCharacterId: String? = null,
     val animationReady: Boolean = false,
-    val backgroundPreserved: Boolean = true
+    val backgroundPreserved: Boolean = false
 ) {
     val personCount: Int
         get() = people.size
