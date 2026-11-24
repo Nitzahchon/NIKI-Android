@@ -46,6 +46,17 @@ data class NikiRigJoint(
  * This is deliberately named NikiCharacterRigData to avoid
  * conflicting with the existing NikiCharacterRig object.
  */
+ 
+/**
+ * Connection graph for a character's body rig.
+ * Defines how joints are connected for independent movement.
+ */
+data class NikiRigGraph(
+    val joints: Map<String, NikiRigJoint> = emptyMap(),
+    val connections: Map<String, List<String>> = emptyMap(),
+    val rootJointId: String? = null
+)
+
 data class NikiCharacterRigData(
     val characterId: String,
     val joints: Map<String, NikiRigJoint> = emptyMap(),
