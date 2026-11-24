@@ -604,9 +604,7 @@ private fun NikiPhotoRigProject.toJson(): JSONObject {
         .put("sourceWidth", sourceWidth)
         .put("sourceHeight", sourceHeight)
         .put("createdAtMillis", createdAtMillis)
-        .put("selectedCharacterId", project.selectedCharacterId) 
         .put("selectedCharacterId", selectedCharacterId) 
         .put("animationReady", animationReady)
         .put("backgroundPreserved", backgroundPreserved)
- 
-}
+ }
