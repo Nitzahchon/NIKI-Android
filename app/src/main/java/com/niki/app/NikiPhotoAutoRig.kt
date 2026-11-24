@@ -1,4 +1,3 @@
-
 package com.niki.app
 
 import android.graphics.Bitmap
@@ -38,7 +37,9 @@ object NikiPhotoAutoRig {
         .enableTracking()
         .build()
 
-    suspend fun createRig(bitmap: Bitmap): NikiPhotoRigProject {
+    suspend fun createRig(
+        bitmap: Bitmap
+    ): NikiPhotoRigProject {
 
         require(!bitmap.isRecycled) {
             "The selected photo is no longer available."
@@ -106,6 +107,7 @@ object NikiPhotoAutoRig {
             x: Float,
             y: Float
         ): NikiRigPoint {
+
             return NikiRigPoint(
                 x = (x / imageWidth).coerceIn(0f, 1f),
                 y = (y / imageHeight).coerceIn(0f, 1f)
@@ -116,6 +118,7 @@ object NikiPhotoAutoRig {
             name: String,
             landmarkType: Int
         ) {
+
             val position = getLandmark(landmarkType)?.position
                 ?: return
 
@@ -141,10 +144,12 @@ object NikiPhotoAutoRig {
         val mouthCenter = if (
             leftMouth != null && rightMouth != null
         ) {
+
             NikiRigPoint(
                 x = (leftMouth.x + rightMouth.x) / 2f,
                 y = (leftMouth.y + rightMouth.y) / 2f
             )
+
         } else {
             null
         }
@@ -156,9 +161,11 @@ object NikiPhotoAutoRig {
         val mouthWidth = if (
             leftMouth != null && rightMouth != null
         ) {
+
             kotlin.math.abs(
                 rightMouth.x - leftMouth.x
             ) * imageWidth / faceWidth
+
         } else {
             0f
         }
@@ -166,9 +173,11 @@ object NikiPhotoAutoRig {
         val mouthHeight = if (
             mouthCenter != null && bottomMouth != null
         ) {
+
             2f * kotlin.math.abs(
                 bottomMouth.y - mouthCenter.y
             ) * imageHeight / faceHeight
+
         } else {
             0f
         }
