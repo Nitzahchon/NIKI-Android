@@ -13,66 +13,6 @@ data class NikiRigPoint(
 )
 
 /**
- * Facial rig information.
- */
-data class NikiFaceRig(
-    val leftEye: NikiRigPoint? = null,
-    val rightEye: NikiRigPoint? = null,
-    val nose: NikiRigPoint? = null,
-    val mouthLeft: NikiRigPoint? = null,
-    val mouthRight: NikiRigPoint? = null,
-    val mouthBottom: NikiRigPoint? = null,
-    val mouthCenter: NikiRigPoint? = null,
-    val mouthWidth: Float = 0f,
-    val mouthHeight: Float = 0f,
-    val leftEar: NikiRigPoint? = null,
-    val rightEar: NikiRigPoint? = null
-)
-
-/**
- * A body joint detected or manually positioned on a character.
- */
-data class NikiRigJoint(
-    val id: String,
-    val position: NikiRigPoint,
-    val parentJointId: String? = null,
-    val confidence: Float = 1f,
-    val movable: Boolean = true
-)
-
-/**
- * Individual bone in the NIKI skeletal rig.
- *
- * Coordinates are relative to the parent bone.
- */
-data class NikiRigBone(
-    val id: String,
-    val parentId: String?,
-    val x: Float,
-    val y: Float,
-    val length: Float,
-    val rotationDegrees: Float
-)
-
-/**
- * Complete rig graph.
- *
- * Supports both:
- * 1. Bone-based skeletal animation.
- * 2. Joint-based PhotoRig connections.
- */
-data class NikiRigGraph(
-    // Existing joint-based structure.
-    val joints: Map<String, NikiRigJoint> = emptyMap(),
-    val connections: Map<String, List<String>> = emptyMap(),
-    val rootJointId: String? = null,
-
-    // Bone-based skeletal structure.
-    val rootBoneIds: List<String> = emptyList(),
-    val bones: Map<String, NikiRigBone> = emptyMap()
-)
-
-/**
  * PhotoRig data for one independently animated character.
  */
 data class NikiCharacterRigData(
