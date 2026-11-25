@@ -2,9 +2,9 @@
 package com.niki.app
 
 /**
- * Complete rig graph.
+ * Complete NIKI rig graph.
  *
- * Supports both:
+ * Supports:
  * 1. Bone-based skeletal animation.
  * 2. Joint-based PhotoRig connections.
  */
