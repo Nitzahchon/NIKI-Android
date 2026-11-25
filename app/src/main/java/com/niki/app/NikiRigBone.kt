@@ -12,5 +12,8 @@ data class NikiRigBone(
     val x: Float,
     val y: Float,
     val length: Float,
-    val rotationDegrees: Float
+    val restRotationDegrees: Float = 0f,
+    val rotationDegrees: Float = restRotationDegrees,
+    val visible: Boolean = true,
+    val drawOrder: Int = 0,
 )
