@@ -1,23 +1,6 @@
 
 package com.niki.app
 
-data class NikiRigBone(
-    val id: String,
-    val parentId: String?,
-    val x: Float,
-    val y: Float,
-    val length: Float,
-    val restRotationDegrees: Float = 0f,
-    val rotationDegrees: Float = restRotationDegrees,
-    val visible: Boolean = true,
-    val drawOrder: Int = 0,
-)
-
-data class NikiRigGraph(
-    val rootBoneIds: List<String>,
-    val bones: Map<String, NikiRigBone>,
-)
-
 data class NikiRigPose(
     val graph: NikiRigGraph,
     val rootYOffset: Float = 0f,
